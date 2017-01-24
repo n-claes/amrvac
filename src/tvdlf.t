@@ -1107,7 +1107,7 @@ call glmSolve(wLC,wRC,ixI^L,ixC^L,idims)
      if (b0_>0.and.iw==b0_+idims{#IFDEF GLM .or.iw==psi_}) then
         if (BnormLF) then
            ! flat B norm using tvdlf
-           fLC(ixC^S,iw) = half*((fLC(ixC^S)+fRC(ixC^S)) &
+           fLC(ixC^S,iw) = half*((fLC(ixC^S,iw)+fRC(ixC^S,iw)) &
                            -tvdlfeps*max(cmaxC(ixC^S)&
                            ,dabs(cminC(ixC^S)))*(wRC(ixC^S,iw)-wLC(ixC^S,iw)))
         else
