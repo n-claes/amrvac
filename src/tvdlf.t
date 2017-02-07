@@ -819,11 +819,11 @@ call glmSolve(wLC,wRC,ixI^L,ixC^L,idims)
 
    ! Calculate fLC=f(uL_j+1/2) and fRC=f(uR_j+1/2) for each iw
    do iw=1,nwflux
-     if(any(patchf(ixC^S)/= 2){#IFDEF GLM iw==b0_+idims.or.iw==psi_}) then 
+     if(any(patchf(ixC^S)/= 2){#IFDEF GLM .or. iw==b0_+idims.or.iw==psi_}) then 
         call getflux(wLC,xi,ixI^L,ixC^L,iw,idims,fLC,transport)
         if (transport) fLC(ixC^S)=fLC(ixC^S)+vLC(ixC^S)*wLC(ixC^S,iw)
      end if
-     if(any(patchf(ixC^S)/=-2){#IFDEF GLM iw==b0_+idims.or.iw==psi_}) then 
+     if(any(patchf(ixC^S)/=-2){#IFDEF GLM .or. iw==b0_+idims.or.iw==psi_}) then 
         call getflux(wRC,xi,ixI^L,ixC^L,iw,idims,fRC,transport)
         if (transport) fRC(ixC^S)=fRC(ixC^S)+vRC(ixC^S)*wRC(ixC^S,iw)
      end if
@@ -1077,11 +1077,11 @@ call glmSolve(wLC,wRC,ixI^L,ixC^L,idims)
 
    ! Calculate fLC=f(uL_j+1/2) and fRC=f(uR_j+1/2) for each iw
    do iw=1,nwflux
-     if(any(patchf(ixC^S)/= 2){#IFDEF GLM iw==b0_+idims.or.iw==psi_}) then
+     if(any(patchf(ixC^S)/= 2){#IFDEF GLM .or. iw==b0_+idims.or.iw==psi_}) then
         call getfluxforhllc(wLC,xi,ixI^L,ixC^L,iw,idims,fLC,transport)
         if (transport)  fLC(ixC^S,iw)=fLC(ixC^S,iw)+vLC(ixC^S)*wLC(ixC^S,iw)
      end if
-     if(any(patchf(ixC^S)/=-2){#IFDEF GLM iw==b0_+idims.or.iw==psi_}) then
+     if(any(patchf(ixC^S)/=-2){#IFDEF GLM .or. iw==b0_+idims.or.iw==psi_}) then
         call getfluxforhllc(wRC,xi,ixI^L,ixC^L,iw,idims,fRC,transport)
         if (transport)   fRC(ixC^S,iw)=fRC(ixC^S,iw)+vRC(ixC^S)*wRC(ixC^S,iw)
      end if
