@@ -161,7 +161,7 @@ case ("threestep")
       if (nw>nwflux) pw2(igrid)%w(ixG^T,nwflux+1:nw) = &
                        pw(igrid)%w(ixG^T,nwflux+1:nw)
    end do
-
+   
    call advect1(typefull1,0.25d0, idim^LIM,t+dt,pw1,t+dt*0.25d0,pw2,pwold)
 
 !$OMP PARALLEL DO PRIVATE(igrid)
@@ -170,6 +170,7 @@ case ("threestep")
         2.0d0/3.0d0*pw2(igrid)%w(ixG^T,1:nwflux)
    end do   
 !$OMP END PARALLEL DO
+   
    call advect1(typefull1,2.0d0/3.0d0, idim^LIM,t+dt/2.0d0,pw2,t+dt/3.0d0,pw,&
           pwold)
 
@@ -365,7 +366,6 @@ do iigrid=1,igridstail; igrid=igrids(iigrid);
        deallocate (pw4(igrid)%w)
    end select
 end do
-
 
 firstsweep=.false.
 end subroutine advect

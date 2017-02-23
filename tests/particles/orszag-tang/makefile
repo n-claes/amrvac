@@ -18,7 +18,7 @@ SHELL         = /bin/sh
 FOBJECT_DIR   = F90sources
 OBJ_DIR       = Build
 
-ARCH          = oliver.defs
+ARCH          = gfortran.defs
 SRC           = $(AMRVAC_DIR)/src
 
 include $(AMRVAC_DIR)/arch/$(ARCH)

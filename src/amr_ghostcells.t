@@ -202,6 +202,7 @@ if (.not.richardson) then
 end if
 
 if(bcphys) then
+!$OMP PARALLEL DO PRIVATE(igrid,kmin^D,kmax^D,ixBmin^D,ixBmax^D,iside,i^D,isphysbound)
   do iigrid=1,igridstail; igrid=igrids(iigrid);
      saveigrid=igrid
      ^D&dxlevel(^D)=rnode(rpdx^D_,igrid);
@@ -242,6 +243,7 @@ if(bcphys) then
         end do
      end do
   end do
+!$OMP END PARALLEL DO
 end if
 
 if (npe>1) call put_bc_comm_types
@@ -1025,6 +1027,8 @@ subroutine fix_auxiliary
 
 integer :: ix^L
 !-----------------------------------------------------------------------------
+
+!$OMP PARALLEL DO PRIVATE(igrid,i^D,ix^L)
 do iigrid=1,igridstail; igrid=igrids(iigrid);
       saveigrid=igrid
       
@@ -1036,6 +1040,7 @@ do iigrid=1,igridstail; igrid=igrids(iigrid);
       call getaux(.true.,pwuse(igrid)%w,px(igrid)%x,ixG^L,ix^L,"bc")
    {end do\}
 end do
+!$OMP END PARALLEL DO
 
 end subroutine fix_auxiliary
 !=============================================================================

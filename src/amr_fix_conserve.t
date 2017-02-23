@@ -128,9 +128,10 @@ end if
 
 nxCo^D=(ixMhi^D-ixMlo^D+1)/2;
 
-!if (.false.) then 
 
-! for all grids: perform flux update at Coarse-Fine interfaces
+! for all grids: perform flux update at Coarse-Fine interfaces 
+!!$OMP PARALLEL DO PRIVATE(igrid,idims,iside,i^D,ic^D,inc^D,ipe_neighbor, &
+!!$OMP ibufnext,ibuf,ix,ixmin^D,ixmax^D,iw,iotherside)
 do iigrid=1,igridstail; igrid=igrids(iigrid);
    do idims= idim^LIM
       select case (idims)
@@ -222,8 +223,7 @@ do iigrid=1,igridstail; igrid=igrids(iigrid);
       end select
    end do
 end do
-
-!end if
+!!$OMP END PARALLEL DO
 
 if (nrecv>0) deallocate(recvbuffer,recvstatus,recvrequest)
 

@@ -26,6 +26,7 @@
  /
 
  &stoplist
+        itmax         = 1000
         tmax          = 0.5
  /
 
@@ -34,12 +35,12 @@
         fileheadout   = 'ot_mhd22'
         typeadvance   = 'threestep'
         typefull1     = 13*'fd'
-        typelimiter1  = 13*'mp5'
+        typelimiter1  = 13*'cada3'
 	typedivbfix   = 'glm3'
  /
 
  &boundlist
-        dixB          = 3
+        dixB          = 2
         typeB         = 7*'periodic',7*'periodic',
                         7*'periodic',7*'periodic'
  /
