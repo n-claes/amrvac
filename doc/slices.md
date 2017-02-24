@@ -6,9 +6,7 @@ To alleviate the disk space requirements and overhead of full snapshot output,
 it is possible to write hypersurfaces at their own (short) intervals.
 Currently, these slices are aligned with the grid, with the benefit that only
 a sub-space of the forest has to be traversed to obtain a Morton ordered AMR-
-aware subgrid. The slice output is useful especially in expensive 3D
-simulations in cartesian geometry, but gives valid output for any dimension
-and geometry. The output is composed of the grid cells _closest_ to the
+aware subgrid. The output is composed of the grid cells _closest_ to the
 specified subdimensional plane and thus reflects non-interpolated simulation
 variables which can be handy for debugging purposes.
 
@@ -38,10 +36,21 @@ for the third slice.
 The total number of slices is specified by _nslices_. The implementation
 obtains a properly Morton ordered subdimensional forest with the same levels
 as the original simulation, such that the output can be used for restarts in
-lower dimension. In the standard configuration, AMRVAC will thus output
-_*.dat_ files that can also be used with _convert_, once the dimensionality of
-the problem and geometry has been set properly by _setamrvac_. This involves
-recompilation of the code. The output filename is composed of the direction
+lower dimension.
+
+Currently there are three fileformats available for the slices.  These are:
+
+1. _.dat_ files which are legacy MPI-AMRVAC snapshot files.  From these, the code can in fact be restarted if re-build for one dimension less.  _slice_type = 'dat'_.
+2. _.csv_ files which write comma-separated value ASCII data. _slice_type = 'csv'_
+3. _.vtu_ files which directly output the slice transformed to Cartesian coordinates using the calc_grid subroutine. _slice_type = 'vtu'_.  This is the default.  
+
+The different types are provided in the filelist namelist:
+     &filelist;
+            slice_type = 'vtu'
+     /
+
+
+The output filename is composed of the direction
 and offset values. For example, the first slice output name reads
 _filenameout-d1-x.600-nXXXX.dat_ and analoge for the other two slices.
 Note, that the order of the (reduced) dimensions in the resulting output files
