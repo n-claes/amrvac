@@ -22,7 +22,9 @@ icollapse=icollapse+1
 end subroutine write_collapsed
 !=============================================================================
 subroutine put_collapse(dir)
-use mod_forest, only: Morton_start, Morton_stop, sfc_to_igrid
+  use mod_forest, only: Morton_start, Morton_stop, sfc_to_igrid
+  use mod_slice, only:alloc_subnode, dealloc_subnode
+
 include 'amrvacdef.f'
 integer, intent(in)                               :: dir
 ! .. local ..

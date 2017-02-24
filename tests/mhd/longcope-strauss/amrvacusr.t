@@ -65,10 +65,6 @@ if (typephys/='mhd') then
    call mpistop("test problem is MHD problem: set typephys!")
 end if
 
-   ! setamrvac -d=22 -phi=0 -z=0 -g=16,16 -p=mhd -u=islandmhd22
-   {^IFONED   call mpistop("prob is 2D") }
-   {^IFTHREED call mpistop("prob is 2D") }
-   {^IFTWOD
    a0val=one/(dpi*dsqrt(two))
    phi0val=0.001d0
    p0val=0.1d0
@@ -103,7 +99,6 @@ end if
    endif
    patchw(ix^S)=.false.
    call conserve(ixG^L,ix^L,w,x,patchw)
-   \}
 
 end subroutine initonegrid_usr
 !=============================================================================

@@ -144,7 +144,7 @@ LOGICAL :: sliceascii
 
 !Convert parameters
 LOGICAL :: convert,autoconvert,saveprim,uselimiter,endian_swap
-CHARACTER*131 :: convert_type, dxfiletype, collapse_type
+CHARACTER*131 :: convert_type, slice_type, dxfiletype, collapse_type
 DOUBLE PRECISION :: normvar(0:nw),normt
 ! --------------------------------------------
 !Test parameters
@@ -226,7 +226,7 @@ common /CHAR/ typecourant,typeresid,typeadvance,typelow1,typelimited,&
    typedivbfix,typediv,typegrad,coolcurve,coolmethod,dustmethod,dustspecies,&
    dusttemp,typeB,typeghostfill,typegridfill,inifile,filenameout,filenameini,&
    filenamelog,fileheadout,wnames,primnames,wnameslog,typefilelog,&
-   convert_type, dxfiletype, collapse_type,teststr
+   convert_type, slice_type, dxfiletype, collapse_type,teststr
 common /LOGI/ time_accurate, addmpibarrier,tmaxexact,treset,itreset,&
    firstprocess,resetgrid,fixprocess,changeglobals,collapse,sourceparasts,&
    sourceimpl,sourceimplcycle,conduction,TCsaturate,bcphys,loglimit,logflag,&
@@ -235,7 +235,7 @@ common /LOGI/ time_accurate, addmpibarrier,tmaxexact,treset,itreset,&
     coarsenprimitive,useprimitiveRel, amrentropy,divbwave,compactres,BnormLF,&
    fixsmall,strictnr,strictsmall,strictzero,strictgetaux,nocartesian,writew,&
    writelevel,Tfix,dustzero,periodB, poleB, aperiodB,internalboundary,&
-   sliceascii,convert,autoconvert,saveprim,uselimiter,endian_swap
+   convert,autoconvert,saveprim,uselimiter,endian_swap,sliceascii
 common /ompdoub/ dxlevel(ndim){#IFDEF STRETCHGRID ,logG,qst} 
 common /ompinte/ saveigrid
 common /ompchar/ typelimiter,typegradlimiter

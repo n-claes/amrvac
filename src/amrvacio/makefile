@@ -7,5 +7,5 @@ OBJECTS += amrio.o convert.o kracken.o  analysis.o collapse.o slice.o
 #########################################################################
 # Dependencies:
 #########################################################################
-amrio.o : kracken.o mod_forest.o
+amrio.o : kracken.o mod_forest.o slice.o
 analysis.o : mod_constants.o

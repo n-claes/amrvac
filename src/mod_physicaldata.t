@@ -24,8 +24,10 @@ module mod_physicaldata
 {#IFDEF BOUNDARYDRIVER
    type(walloc), dimension(2*^ND), target :: pB0bc_cell,  pB0bc_face^D
 }
-   type(walloc), pointer :: myB0_cell, myB0_face^D, myB0
-   type(walloc_sub), dimension(ngridshi) :: pw_sub
+  type(walloc), pointer :: myB0_cell, myB0_face^D, myB0
+  type(walloc_sub), dimension(ngridshi) :: pw_sub  ! For the center values on the slice
+  type(walloc_sub), dimension(ngridshi) :: pwC_sub ! For the corner values on the slice
+
 {^IFONED
    double precision, dimension(:), allocatable :: collapsedData
 }
@@ -47,8 +49,9 @@ module mod_physicaldata
       double precision, dimension(:), pointer :: x
    end type xalloc_sub
 }
-   type(xalloc), dimension(ngridshi), target :: px, pxCoarse
-   type(xalloc_sub), dimension(ngridshi) :: px_sub
+  type(xalloc), dimension(ngridshi), target :: px, pxCoarse
+  type(xalloc_sub), dimension(ngridshi) :: px_sub  ! For the centerpositions on the slice
+  type(xalloc_sub), dimension(ngridshi) :: pxC_sub ! For the cornerpositions on the slice
    !!! type(xalloc), pointer :: myx
 
    type geoalloc

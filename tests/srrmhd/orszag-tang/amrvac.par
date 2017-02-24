@@ -20,7 +20,7 @@
  &end
 
  &stoplist
-        tmax              = 2
+        tmax              = 3
         dtmin             = 1.d-6
  &end
 

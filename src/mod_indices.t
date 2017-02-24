@@ -41,7 +41,8 @@ module mod_indices
   integer, save :: type_block_io, size_block_io, size_block
   {#IFDEF TRANSFORMW
   integer, save :: type_block_io_tf, size_block_io_tf}
-  integer, save :: type_subblock_io, type_subblock_x_io
+  integer, save :: type_subblock_io, type_subblock_x_io   ! Center variables
+  integer, save :: type_subblockC_io, type_subblockC_x_io ! Corner variables
   integer, save :: type_block_xc_io,type_block_xcc_io
   integer, save :: type_block_wc_io,type_block_wcc_io
   integer, save :: itag

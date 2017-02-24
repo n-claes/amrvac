@@ -63,11 +63,11 @@ double precision :: dxlone^D
 namelist /testlist/   teststr,ixtest1,ixtest2,ixtest3,iwtest,idimtest
 namelist /filelist/   filenameout,filenameini,filenamelog, &
                       snapshotini,typefilelog,firstprocess,resetgrid,changeglobals,snapshotnext, &
-                      convert,convert_type,dxfiletype,saveprim,primnames, &
+                      convert,convert_type,slice_type,dxfiletype,saveprim,primnames, &
                       typeparIO,uselimiter,nwauxio,nocartesian,addmpibarrier, &
                       writew,writelevel,writespshift,endian_swap, &
                       normvar,normt,level_io,level_io_min,level_io_max, &
-                      autoconvert,sliceascii,slicenext,collapseNext,collapse_type
+                      autoconvert,slicenext,collapseNext,collapse_type
 namelist /savelist/   tsave,itsave,dtsave,ditsave,nslices,slicedir,slicecoord,collapse,collapseLevel{#IFDEF MAGNETOFRICTION , ditsavemf}
 namelist /stoplist/   itmax,tmax,tmaxexact,dtmin,t,it,treset,itreset,residmin,residmax,typeresid{#IFDEF MAGNETOFRICTION , itmaxmf}
 namelist /methodlist/ wnames,fileheadout,typeadvance, &
@@ -246,7 +246,8 @@ typeparIO=0
 nslices=0
 collapse=.false.
 collapseLevel=1
-sliceascii=.false.
+sliceascii=.true.
+slice_type='vtu'
 do ifile=1,nfile
    do isave=1,nsavehi
       tsave(isave,ifile)=bigdouble   ! t  of saves into the output files
@@ -403,6 +404,9 @@ do ifile=1,nfile
        write(uniterr,*)'Warning in ReadParameters: ', &
                        'No save condition for file ',ifile
 enddo
+
+! Consistency checks for the slices:
+if (index(slice_type,'dat')>=1) sliceascii = .false.
 
 do islice=1,nslices
    if(slicedir(islice) > ndim) &
@@ -777,6 +781,7 @@ subroutine saveamrfile(ifile)
 ! following specific for Intel compiler and use on VIC3 with MPT
 !DEC$ ATTRIBUTES NOINLINE :: write_snapshot
 
+  use mod_slice, only: write_slice
 include 'amrvacdef.f'
 integer:: ifile
 !-----------------------------------------------------------------------------
