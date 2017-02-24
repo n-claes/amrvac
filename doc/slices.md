@@ -45,10 +45,10 @@ Currently there are three fileformats available for the slices.  These are:
 3. _.vtu_ files which directly output the slice transformed to Cartesian coordinates using the calc_grid subroutine. _slice_type = 'vtu'_.  This is the default.  
 
 The different types are provided in the filelist namelist:
-     &filelist;
-            slice_type = 'vtu'
-     /
 
+     & filelist
+            slice_type = 'vtu'
+    /
 
 The output filename is composed of the direction
 and offset values. For example, the first slice output name reads
@@ -99,39 +99,3 @@ the code can be left untouched. It is a simple exercise in shell scripting to
 run along all output-files in one go. For example with the BASH:
 
     for i in {0..10}; do ./amrvac -restart $i -i slices.par -slice $i -if datamr/data; done
-
-## ASCII output
-
-As an alternative to the _*.dat_ file format, the user also has the option to
-obtain comma-separated-value _*.csv_ files of the cell-center variables. This
-can be useful especially for 2D simulations (ergo 1D line output) which can
-then be simply visualized using e.g. gnuplot. For 1D simulations, the code
-will _always_ write a single _*.csv_ file and append the point data together
-with the output time. The file then reads _filenameout-d1-x.600.csv_ in the
-example above. For a quick look, the _*.csv_ files can be imported in Paraview
-and be visualized as points using the filter _Table to Points_.
-ASCII output is sensible to the switch _saveprim_ of the _filelist_ section,
-therefore primitive variable output at runtime is possible. The ASCII module
-also allows to print auxiliary variables depending on the switch _nwauxio_ in
-the _filelist_ section. To activate ASCII output, the option
-
-     & filelist
-            sliceascii=.true.
-    /
-
-needs to be set.
-
-## Usage with Paraview
-
-For slices of a 3D run, Paraview will import the converted _*.dat_ data to the
-_(x,y)_ plane. The original orientation can than be restored by using the
-_Transformation_ section in the Display options of the datafile pipeline
-object. The _Translate_ settings are self-explaining and according to the
-preserved order of dimensions, the _Orientation_ settings for a cartesian
-simulation should read
-
-    d1: 90 90 0
-    d2: 90  0 0
-    d3:  0  0 0
-
-for directions 1-3.
