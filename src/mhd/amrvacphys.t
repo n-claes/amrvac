@@ -1024,12 +1024,8 @@ call curlvector(tmpvec,ixI^L,ixO^L,curlj,idirmin1,1,3)
 
 {#IFDEF ENERGY
 ! de/dt= +div(B x Jeta)
-if(B0field) then
-   w(ixO^S,e_)=w(ixO^S,e_)+qdt*sum(current(ixO^S,:)**2,dim=ndim+1)*eta(ixO^S)
-else
-   w(ixO^S,e_)=w(ixO^S,e_)+qdt*(sum(current(ixO^S,:)**2,dim=ndim+1)*eta(ixO^S)-&
-     sum(wCT(ixO^S,b0_+1:b0_+ndir)*curlj(ixO^S,1:ndir),dim=ndim+1))
-end if
+w(ixO^S,e_)=w(ixO^S,e_)+qdt*(sum(current(ixO^S,:)**2,dim=ndim+1)*eta(ixO^S)-&
+  sum(wCT(ixO^S,b0_+1:b0_+ndir)*curlj(ixO^S,1:ndir),dim=ndim+1))
 
 if(fixsmall) call smallvalues(w,x,ixI^L,ixO^L,"addsource_res2")
 }
