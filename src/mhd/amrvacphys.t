@@ -1017,31 +1017,19 @@ endif
 ! dB/dt= -curl(J*eta), thus B_i=B_i-eps_ijk d_j Jeta_k
 tmpvec(ix^S,1:ndir)=zero
 do jdir=idirmin,3
-   tmpvec(ix^S,jdir)=current(ix^S,jdir)*eta(ix^S)*qdt
+   tmpvec(ix^S,jdir)=current(ix^S,jdir)*eta(ix^S)
 enddo
 call curlvector(tmpvec,ixI^L,ixO^L,curlj,idirmin1,1,3)
-{^C& w(ixO^S,b^C_) = w(ixO^S,b^C_)-curlj(ixO^S,b^C_-b0_)\}
+{^C& w(ixO^S,b^C_) = w(ixO^S,b^C_)-qdt*curlj(ixO^S,b^C_-b0_)\}
 
 {#IFDEF ENERGY
 ! de/dt= +div(B x Jeta)
-tmpvec2(ix^S,1:ndir)=zero
-do idir=1,ndir; do jdir=1,ndir; do kdir=idirmin,3
-   if(lvc(idir,jdir,kdir)/=0)then
-      tmp(ix^S)=wCT(ix^S,b0_+jdir)*current(ix^S,kdir)*eta(ix^S)*qdt
-      if(lvc(idir,jdir,kdir)==1)then
-         tmpvec2(ix^S,idir)=tmpvec2(ix^S,idir)+tmp(ix^S)
-      else
-         tmpvec2(ix^S,idir)=tmpvec2(ix^S,idir)-tmp(ix^S)
-      endif
-   endif
-enddo; enddo; enddo
-!select case(typediv)
-!case("central")
-   call divvector(tmpvec2,ixI^L,ixO^L,tmp)
-!case("limited")
-!   call divvectorS(tmpvec2,ixI^L,ixO^L,tmp)
-!end select
-w(ixO^S,e_)=w(ixO^S,e_)+tmp(ixO^S)
+if(B0field) then
+   w(ixO^S,e_)=w(ixO^S,e_)+qdt*sum(current(ixO^S,:)**2,dim=ndim+1)*eta(ixO^S)
+else
+   w(ixO^S,e_)=w(ixO^S,e_)+qdt*(sum(current(ixO^S,:)**2,dim=ndim+1)*eta(ixO^S)-&
+     sum(wCT(ixO^S,b0_+1:b0_+ndir)*curlj(ixO^S,1:ndir),dim=ndim+1))
+end if
 
 if(fixsmall) call smallvalues(w,x,ixI^L,ixO^L,"addsource_res2")
 }
