@@ -10,7 +10,7 @@ mod_gridvars.o  mod_odeint.o  mod_oneblock.o mod_lu.o
 # Dependencies:
 #########################################################################
 amrvacusr.o : mod_particles.o mod_odeint.o
-mod_particles.o : mod_constants.o mod_gridvars.o
+mod_particles.o : mod_constants.o mod_gridvars.o slice.o
 advance.o : mod_particles.o
 amrvac.o : mod_gridvars.o
 mod_metric.o : mod_lu.o
