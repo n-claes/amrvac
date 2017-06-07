@@ -7,15 +7,10 @@
 	saveprim = .true.
 	autoconvert = .true.
 	filenamelog='./output/amrvac'
-	filenameout = './output/fixsmall'
-        convert = .true.
-	convert_type='vtuCC'
-	!nocartesian=.false.
-        !snapshotini=1
-        !dxfiletype='lsb'
-        !snapshotnext=36
+	filenameout = './output/data'
+	filenameini= './output/data'
+	convert_type='vtuBCCmpi'
         nwauxio=0
-	filenameini= './output/fixsmall'
 /
 		
 
@@ -24,14 +19,11 @@
         itsave(1,1)=0
         itsave(1,2)=0
         ditsave(1)= 100
-!        ditsave(2)= 1
         dtsave(2)= 5.0d-3
 	
 	
 /
  &stoplist
-!      itreset = .true.
-!        itmax=100
        tmax = 5.0d-2
        dtmin= 1.0d-12
  /
