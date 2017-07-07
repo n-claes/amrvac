@@ -17,7 +17,7 @@ double precision, dimension(ixI^S,1:nw)  :: f, fmp, fmin, fmax, ful, dm4, d, fmd
 double precision, dimension(ixI^S,1:nw)  :: wRCtmp, wLCtmp
 double precision, dimension(ixI^S) :: tmp, tmp2, tmp3, a, b, c
 logical, dimension(ixI^S)       :: flagL, flagR
-double precision, parameter     :: eps=1.0d-12, alpha=4.0d0
+double precision, parameter     :: eps=0.0d0, alpha=4.0d0
 !double precision                :: alpha
 !----------------------------------------------------------------------------
 
@@ -220,7 +220,7 @@ integer                         :: id^L, idp^L, idpp^L, idm^L, ie^L, iem^L, iep^
 integer                         :: iw
 double precision, dimension(ixI^S,1:nw)  :: f, fmp, fmin, fmax, ful, dm4, d, fmd, flc, flim
 double precision, dimension(ixI^S) :: tmp, tmp2, tmp3, a, b, c
-double precision, parameter     :: eps=1.0d-12, alpha=4.0d0
+double precision, parameter     :: eps=0.0d0, alpha=4.0d0
 !double precision                :: alpha
 !----------------------------------------------------------------------------
 
@@ -322,7 +322,7 @@ integer                         :: id^L, idp^L, idpp^L, idm^L, ie^L, iem^L, iep^
 integer                         :: iw
 double precision, dimension(ixI^S,1:nw)  :: f, fmp, fmin, fmax, ful, dm4, d, fmd, flc, flim
 double precision, dimension(ixI^S) :: tmp, tmp2, tmp3, a, b, c
-double precision, parameter     :: eps=1.0d-12, alpha=4.0d0
+double precision, parameter     :: eps=0.0d0, alpha=4.0d0
 !double precision                :: alpha
 !----------------------------------------------------------------------------
 ! Right side:
