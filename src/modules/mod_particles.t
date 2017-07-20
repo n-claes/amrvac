@@ -210,6 +210,7 @@ end subroutine locate_particle
 subroutine find_particle_ipe(x,igrid_particle,ipe_particle)
 
 use mod_forest, only: tree_node_ptr, tree_root
+use mod_slice, only: get_igslice
 include 'amrvacdef.f'
 
 double precision, dimension(ndir), intent(in)   :: x
