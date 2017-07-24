@@ -90,7 +90,7 @@ do while (nparticles .lt. Npart)
            &**2)
      
       !> maxwellian velocity distribution assigned here
-      prob  = sqrt(-log(1.0-.999999*s1(nparticles)));
+      prob  = sqrt(-2.0d0*log(1.0-.999999*s1(nparticles)));
 
       !> random pitch angle given to each particle
       theta = 2.0d0*dpi*t1(nparticles)
@@ -148,8 +148,8 @@ do while (nparticles .lt. Npart)
            &**2)
 
       !> maxwellian velocity distribution assigned here
-      prob  = sqrt(-log(1.0-.999999*s1(nparticles)));
-      prob2 = sqrt(-log(1.0-.999999*s2(nparticles)));
+      prob  = sqrt(-2.0d0 * log(1.0-.999999*s1(nparticles)));
+      prob2 = sqrt(-2.0d0 * log(1.0-.999999*s2(nparticles)));
       !> random pitch angle given to each particle
       theta = 2.0d0*dpi*t1(nparticles)
       theta2 = 2.0d0*dpi*t2(nparticles)
@@ -159,16 +159,15 @@ do while (nparticles .lt. Npart)
       u(2) =  UNIT_VELOCITY * prob*dsin(theta) / CONST_C    !< momentum gamma*vy/c normalised by speed of light
       u(3) =  UNIT_VELOCITY * prob2*dcos(theta2) / CONST_C  !< momentum gamma*vz/c normalised by speed of light
       normu = dsqrt(u(1)**2 + u(2)**2 + u(3)**2)
-      u(1) = u(1) / normu
-      u(2) = u(2) / normu
-      u(3) = u(3) / normu
+      !u(1) = u(1) / normu
+      !u(2) = u(2) / normu
+      !u(3) = u(3) / normu
       lfac0 = 10
       u(1) = lfac0 * u(1)
       u(2) = lfac0 * u(2)
       u(3) = lfac0 * u(3)
 {^C& 
       particle(nparticles)%self%u(^C) = u(^C)
-print*,u(^C)
       !> initialise payloads for Lorentz module
       particle(nparticles)%self%payload(1:npayload) = 0.0d0
 \}
