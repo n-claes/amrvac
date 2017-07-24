@@ -30,8 +30,8 @@ integer                              :: igrid_particle, ipe_particle
 integer, parameter                   :: Npart=100
 integer                              :: seed
 double precision                     :: r^C(1:Npart), s^C(1:Npart), t^C(1:Npart), u^C(1:Npart)
-double precision		     :: theta, prob, theta2, prob2
-double precision                     :: vthermal, lfac, gamma
+double precision		     :: theta, prob, theta2, prob2, normu
+double precision                     :: vthermal, lfac, gamma, lfac0
 double precision                     :: B(1:ndir), absB, u(1:ndir), absS
 integer                              :: ipart
 logical, dimension(1:Npart)          :: follow=.false.
@@ -90,7 +90,7 @@ do while (nparticles .lt. Npart)
            &**2)
      
       !> maxwellian velocity distribution assigned here
-      prob  = sqrt(-2.0d0*log(1.0-.999999*s1(nparticles)));
+      prob  = sqrt(-log(1.0-.999999*s1(nparticles)));
 
       !> random pitch angle given to each particle
       theta = 2.0d0*dpi*t1(nparticles)
@@ -141,26 +141,34 @@ do while (nparticles .lt. Npart)
 {^C&
      !> mono-energetic velocity distribution
      ! particle(nparticles)%self%u(^C) = 0.5d0*(-1.5d0+s^C(nparticles)+t^C(nparticles)+u^C(nparticles)) * vthermal /CONST_c
-     
+\}
      !> Maxwellian velocity distribution
 
         absS = sqrt(s1(nparticles)**2+s2(nparticles)**2+s3(nparticles)&
            &**2)
 
       !> maxwellian velocity distribution assigned here
-      prob  = sqrt(-2.0d0*log(1.0-.999999*s1(nparticles)));
-      prob2 = sqrt(-2.0d0*log(1.0-.999999*s2(nparticles)));
-
+      prob  = sqrt(-log(1.0-.999999*s1(nparticles)));
+      prob2 = sqrt(-log(1.0-.999999*s2(nparticles)));
       !> random pitch angle given to each particle
       theta = 2.0d0*dpi*t1(nparticles)
       theta2 = 2.0d0*dpi*t2(nparticles)
       
       !> random maxwellian velocity
-      u(1) =  UNIT_VELOCITY *prob*dcos(theta)/CONST_c*sqrt(CONST_mp/CONST_me)    !< momentum gamma*vx/c normalised by speed of light
-      u(2) =  UNIT_VELOCITY *prob*dsin(theta)/CONST_c*sqrt(CONST_mp/CONST_me)    !< momentum gamma*vy/c normalised by speed of light
-      u(3) =  UNIT_VELOCITY *prob2*dcos(theta2)/CONST_c*sqrt(CONST_mp/CONST_me)  !< momentum gamma*vz/c normalised by speed of light
-      lfac = one/sqrt(one-(u(1)**2+u(2)**2+u(3)**2))      
-      particle(nparticles)%self%u(^C) = u(^C) * lfac
+      u(1) =  UNIT_VELOCITY * prob*dcos(theta) / CONST_C    !< momentum gamma*vx/c normalised by speed of light
+      u(2) =  UNIT_VELOCITY * prob*dsin(theta) / CONST_C    !< momentum gamma*vy/c normalised by speed of light
+      u(3) =  UNIT_VELOCITY * prob2*dcos(theta2) / CONST_C  !< momentum gamma*vz/c normalised by speed of light
+      normu = dsqrt(u(1)**2 + u(2)**2 + u(3)**2)
+      u(1) = u(1) / normu
+      u(2) = u(2) / normu
+      u(3) = u(3) / normu
+      lfac0 = 10
+      u(1) = lfac0 * u(1)
+      u(2) = lfac0 * u(2)
+      u(3) = lfac0 * u(3)
+{^C& 
+      particle(nparticles)%self%u(^C) = u(^C)
+print*,u(^C)
       !> initialise payloads for Lorentz module
       particle(nparticles)%self%payload(1:npayload) = 0.0d0
 \}

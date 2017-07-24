@@ -873,71 +873,28 @@ case ('slab')
 ! **************************************************
 !> Momentum update
 ! **************************************************
+!print*,'This is Vays scheme in a Cartesian grid'
 
 
-{#IFDEF PARTICLES_VAY
-!The Vay mover
+        ! Vay mover
         call cross(particle(ipart)%self%u,b,tmp)
-        uhalf = particle(ipart)%self%u + &
-             q * dt_p /(2.0d0 * m * CONST_C) * (e &
-             + tmp/(lfac))
-       
-	tau = q * dt_p / (2.d0 * m * CONST_C) * b
+        uhalf(1:ndir) = particle(ipart)%self%u(1:ndir) + &
+             q * dt_p /(2.0d0 * m * CONST_C) * (e(1:ndir) &
+             + tmp(1:ndir)/lfac)
+
+        tau = q * dt_p / (2.d0 * m) * b
         uprime = uhalf + q * dt_p / (2.d0 * m * CONST_C) * e
         call get_lfac(uprime,lfacprime)
-        sigma = lfacprime**2 - ({tau(^C)*tau(^C)|+})
-       
-	ustar = ({uprime(^C)*tau(^C)|+}) / CONST_C     
+        sigma = lfacprime**2 - {tau(^C)*tau(^C)|+}
+        ustar = {uprime(^C)*tau(^C)|+}
         lfac = sqrt((sigma + sqrt(sigma**2 + 4.d0 * &
-             (({tau(^C)*tau(^C)|+}) + ({ustar(^C)*ustar(^C)|+})))) / 2.d0)
+             {tau(^C)*tau(^C)|+} + {ustar(^C)*ustar(^C)|+})) / 2.d0)
 
         tovergamma = tau / lfac
-        sscal = 1.d0 / (1.d0 + ({tovergamma(^C)*tovergamma(^C)|+}))
+        sscal = 1.d0 / (1.d0 + {tovergamma(^C)*tovergamma(^C)|+})
         call cross(uprime,tovergamma,tmp)
-        particle(ipart)%self%u = sscal * (uprime + ({uprime(^C)*tovergamma(^C)|+}) & 
-	* tovergamma + tmp)      
-}
-!The Boris mover
-{#IFNDEF PARTICLES_VAY
-emom = q * e * dt_p /(2.0d0 * m * CONST_C)
+        particle(ipart)%self%u = sscal * (uprime + {uprime(^C)*tovergamma(^C)|+} * tovergamma + tmp)      
 
-      if (losses) then
-         call get_lfac(particle(ipart)%self%u,lfac)
-         re = abs(q)**2 / (m * CONST_C**2)
-         call cross(particle(ipart)%self%u,b,tmp)
-         radmom = - third * re**2 * lfac &
-              * ( ({(e(^C)+tmp(^C)/lfac)**2|+})  &
-              - (({e(^C)*particle(ipart)%self%u(^C)|+})/lfac)**2) &
-              * particle(ipart)%self%u / m / CONST_C * dt_p
-      else
-         radmom = 0.0d0
-      end if
-      
-      uminus = particle(ipart)%self%u + emom + radmom
-      
-      call get_lfac(uminus,lfac)
-      call get_t(b,lfac,dt_p,q,m,t_geom)
-      call get_s(t_geom,s)
-      
-      call cross(uminus,t_geom,tmp)
-      udash = uminus + tmp
-      
-      call cross(udash,s,tmp)
-      uplus = uminus + tmp
-
-      if (losses) then
-         call cross(uplus,b,tmp)
-         radmom = - third * re**2 * lfac &
-              * ( ({(e(^C)+tmp(^C)/lfac)**2|+})  &
-              - (({e(^C)*uplus(^C)|+})/lfac)**2) &
-              * uplus / m / CONST_C * dt_p
-      else
-         radmom = 0.0d0
-      end if
-
-      
-      particle(ipart)%self%u = uplus + emom + radmom
-}
 
 
 ! **************************************************
