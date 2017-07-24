@@ -159,7 +159,8 @@ do while (nparticles .lt. Npart)
       u(1) =  UNIT_VELOCITY *prob*dcos(theta)/CONST_c*sqrt(CONST_mp/CONST_me)    !< momentum gamma*vx/c normalised by speed of light
       u(2) =  UNIT_VELOCITY *prob*dsin(theta)/CONST_c*sqrt(CONST_mp/CONST_me)    !< momentum gamma*vy/c normalised by speed of light
       u(3) =  UNIT_VELOCITY *prob2*dcos(theta2)/CONST_c*sqrt(CONST_mp/CONST_me)  !< momentum gamma*vz/c normalised by speed of light
-      particle(nparticles)%self%u(^C) = u(^C)
+      lfac = one/sqrt(one-(u(1)**2+u(2)**2+u(3)**2))      
+      particle(nparticles)%self%u(^C) = u(^C) * lfac
       !> initialise payloads for Lorentz module
       particle(nparticles)%self%payload(1:npayload) = 0.0d0
 \}

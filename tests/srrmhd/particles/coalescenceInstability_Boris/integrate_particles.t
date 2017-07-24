@@ -72,7 +72,7 @@ double precision                    :: bdotgradbdrift_abs, uedotgradbdrift_abs
 double precision                    :: bdotgraduedrift_abs, uedotgraduedrift_abs
 double precision                    :: momentumpar1, momentumpar2, momentumpar3, momentumpar4
 ! for odeint:
-integer                             :: nok, nbad, ic1^D, ic2^D, ierror
+integer                             :: nok, nbad, ic1^D, ic2^D
 double precision                    :: h1, hmin, h_old
 
 !!!!! Precision of time-integration: !!!!!!!!!!!!!
@@ -180,13 +180,7 @@ end if
    endif
 
 !< RK4 integration with adaptive stepwidth
-   call odeint(y,nvar,tloc,tloc+dt_p,eps,h1,hmin,nok,nbad,derivs_gca_rk,rkqs,ierror)
-
-   if (ierror /= 0) then
-      print *, "odeint returned error code", ierror
-      print *, "1 means hmin too small, 2 means MAXSTP exceeded"
-      print *, "Having a problem with particle", iipart
-   end if
+   call odeint(y,nvar,tloc,tloc+dt_p,eps,h1,hmin,nok,nbad,derivs_gca_rk,rkqs)
 
 !< original RK integration without interpolation in ghost cells
 ! call odeint(y,nvar,tloc,tloc+dt_p,eps,h1,hmin,nok,nbad,derivs_gca,rkqs)
@@ -842,13 +836,15 @@ end subroutine set_particles_dt_advect
 !=============================================================================
 {#IFDEF PARTICLES_LORENTZ
 subroutine integrate_particles_lorentz()
-!> this is the relativistic Boris scheme, a leapfrog integrator
+!> this is the relativistic Vay scheme, a leapfrog integrator
 use constants
 use mod_particles
 include 'amrvacdef.f'
 integer                             :: ipart, iipart
 double precision                    :: lfac, q, m, dt_p, cosphi, sinphi, phi1, phi2, r, re
 double precision, dimension(1:ndir) :: b, e, emom, uminus, t_geom, s, udash, tmp, uplus, xcart1, xcart2, ucart2, radmom
+double precision, dimension(1:ndir) :: uhalf, tau, uprime, ustar, tovergamma
+double precision                    :: lfacprime, sscal, sigma
 !-----------------------------------------------------------------------------
 
 do iipart=1,nparticles_active_on_mype;ipart=particles_active_on_mype(iipart);
@@ -863,6 +859,7 @@ do iipart=1,nparticles_active_on_mype;ipart=particles_active_on_mype(iipart);
            + 0.5d0 * dt_p * particle(ipart)%self%u(1:ndir)/lfac &
            * CONST_C / UNIT_LENGTH
 
+      ! Get E, B at new position
    call get_b(particle(ipart)%igrid,particle(ipart)%self%x,particle(ipart)%self%t,b)
    call get_e(particle(ipart)%igrid,particle(ipart)%self%x,particle(ipart)%self%t,e)
 
@@ -876,7 +873,33 @@ case ('slab')
 ! **************************************************
 !> Momentum update
 ! **************************************************
-      emom = q * e * dt_p /(2.0d0 * m * CONST_C)
+
+
+{#IFDEF PARTICLES_VAY
+!The Vay mover
+        call cross(particle(ipart)%self%u,b,tmp)
+        uhalf = particle(ipart)%self%u + &
+             q * dt_p /(2.0d0 * m * CONST_C) * (e &
+             + tmp/(lfac))
+       
+	tau = q * dt_p / (2.d0 * m * CONST_C) * b
+        uprime = uhalf + q * dt_p / (2.d0 * m * CONST_C) * e
+        call get_lfac(uprime,lfacprime)
+        sigma = lfacprime**2 - ({tau(^C)*tau(^C)|+})
+       
+	ustar = ({uprime(^C)*tau(^C)|+}) / CONST_C     
+        lfac = sqrt( sigma + sqrt(sigma**2 + 4.d0 * &
+             (({tau(^C)*tau(^C)|+}) + ({ustar(^C)*ustar(^C)|+}))) / 2.d0)
+
+        tovergamma = tau / lfac
+        sscal = 1.d0 / (1.d0 + ({tovergamma(^C)*tovergamma(^C)|+}))
+        call cross(uprime,tovergamma,tmp)
+        particle(ipart)%self%u = sscal * (uprime + ({uprime(^C)*tovergamma(^C)|+}) & 
+	* tovergamma + tmp)      
+}
+!The Boris mover
+{#IFNDEF PARTICLES_VAY
+emom = q * e * dt_p /(2.0d0 * m * CONST_C)
 
       if (losses) then
          call get_lfac(particle(ipart)%self%u,lfac)
@@ -914,13 +937,14 @@ case ('slab')
 
       
       particle(ipart)%self%u = uplus + emom + radmom
+}
 
 
 ! **************************************************
 !> CYLINDRICAL COORDINATES
 ! **************************************************
 case ('cylindrical')
-      
+print*,'This is Boris scheme in cylindrical coordinates'
 
 ! **************************************************
 !> Momentum update
@@ -1008,12 +1032,14 @@ case ('cylindrical')
       particle(ipart)%self%u(pphi_) = cosphi * tmp(pphi_) - sinphi * tmp(r_)
       particle(ipart)%self%u(zz_)   = tmp(zz_)
 
-
-
 end select
 
-  ! **************************************************
-!> Position update
+   
+
+
+
+! **************************************************
+!> Position update over half timestep at the end
 ! **************************************************
       
       ! update position
@@ -1029,14 +1055,17 @@ end select
 ! **************************************************
 !> Payload update
 ! **************************************************
-
+      if (npayload > 0) then
       !> current gyroradius
       call cross(particle(ipart)%self%u,b,tmp)
       tmp = tmp / sqrt({b(^C)**2|+})
       particle(ipart)%self%payload(1) = sqrt({tmp(^C)**2|+}) / sqrt({b(^C)**2|+}) * m / abs(q) * 8.9875d+20
-
+      end if
+      ! e.b payload
+      if (npayload>1) then
       !> e.b (set npayload=2 first):
-!      particle(ipart)%self%payload(2) = ({e(^C)*b(^C)|+})/ (sqrt({b(^C)**2|+})* sqrt({e(^C)**2|+})) 
+      particle(ipart)%self%payload(2) = ({e(^C)*b(^C)|+})/ (sqrt({b(^C)**2|+})* sqrt({e(^C)**2|+}))
+      end if
 
 end do !< ipart loop
 

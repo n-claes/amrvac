@@ -44,7 +44,8 @@ do iigrid=1,igridstail; igrid=igrids(iigrid);
 
 ! fill with electric field:
    mygridvars(igrid)%w(ixG^T,ep1_:ep^NC_) = w(ixG^T,e1_:e^NC_) &
-        * sqrt(4.0d0*dpi*UNIT_VELOCITY**2.0d0 * UNIT_DENSITY)
+        * sqrt(4.0d0*dpi*UNIT_VELOCITY**2.0d0 * UNIT_DENSITY) !* UNIT_VELOCITY / CONST_c
+!print*,'Should this division by c be there or not?'
 
 }
 

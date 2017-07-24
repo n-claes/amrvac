@@ -9,9 +9,6 @@ call integrate_particles_lorentz
 {#IFDEF PARTICLES_ADVECT
 call integrate_particles_advect
 }
-{#IFDEF PARTICLES_SPACECRAFT
-call integrate_particles_spacecraft
-}
 {#IFDEF PARTICLES_GCA
 call integrate_particles_gca
 }
@@ -29,9 +26,6 @@ call set_particles_dt_lorentz
 }
 {#IFDEF PARTICLES_ADVECT
 call set_particles_dt_advect
-}
-{#IFDEF PARTICLES_SPACECRAFT
-call set_particles_dt_spacecraft
 }
 {#IFDEF PARTICLES_GCA
 call set_particles_dt_gca
@@ -54,28 +48,43 @@ subroutine integrate_particles_gca()
 use mod_odeint
 use mod_particles
 use constants
-use mod_gridvars, only: get_vec, igrid_working, ipart_working, ep^C_, bp^C_
+use mod_gridvars
 include 'amrvacdef.f'
 
-integer                             :: ipart, iipart
-double precision                    :: dt_p, tloc
-double precision, dimension(1:ndir) :: x, ue, e, b, bhat
-double precision                    :: kappa, Mr, upar, m, absb, gamma, q
+logical                             :: int_choice
+integer                             :: ipart, iipart, seed, ic^D,igrid_particle, ipe_particle, ipe_working
+logical                                   :: BC_applied
+double precision                    :: lfac, absS
+double precision                    :: B_new(1:ndir), absB_new, u(1:ndir)
+double precision                    :: r^C, s^C, prob, theta
+double precision                    :: dt_p, tloc, dydt(1:^NC+2),ytmp(1:^NC+2), euler_cfl, int_factor
+double precision, dimension(1:ndir) :: x, ue, e, b, bhat, x_new
+double precision, dimension(1:ndir) :: drift1, drift2
+double precision, dimension(1:ndir) :: drift3, drift4, drift5, drift6, drift7
+double precision, dimension(1:ndir) :: bdotgradb, uedotgradb, gradkappaB
+double precision, dimension(1:ndir) :: bdotgradue, uedotgradue
+double precision, dimension(1:ndir) :: gradBdrift, reldrift, bdotgradbdrift
+double precision, dimension(1:ndir) :: uedotgradbdrift, bdotgraduedrift
+double precision, dimension(1:ndir) :: uedotgraduedrift
+double precision                    :: kappa, Mr, upar, m, absb, gamma, q, mompar, vpar, ueabs
+double precision                    :: gradBdrift_abs, reldrift_abs, epar
+double precision                    :: bdotgradbdrift_abs, uedotgradbdrift_abs
+double precision                    :: bdotgraduedrift_abs, uedotgraduedrift_abs
+double precision                    :: momentumpar1, momentumpar2, momentumpar3, momentumpar4
 ! for odeint:
-integer                             :: nok, nbad, ierror
-double precision                    :: h1, hmin
+integer                             :: nok, nbad, ic1^D, ic2^D
+double precision                    :: h1, hmin, h_old
 
 !!!!! Precision of time-integration: !!!!!!!!!!!!!
-double precision,parameter          :: eps=1.0d-5
+double precision,parameter          :: eps=1.0d-6
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 integer, parameter                  :: nvar = ^NC+2
 double precision,dimension(1:nvar)  :: y
-external derivs_gca
+external derivs_gca, derivs_gca_rk
 !-----------------------------------------------------------------------------
-
 do iipart=1,nparticles_active_on_mype;ipart=particles_active_on_mype(iipart);
-
+int_choice=.false.   
    dt_p = particle(ipart)%self%dt
    igrid_working = particle(ipart)%igrid
    ipart_working = particle(ipart)%self%index
@@ -83,42 +92,118 @@ do iipart=1,nparticles_active_on_mype;ipart=particles_active_on_mype(iipart);
    x(1:ndir) = particle(ipart)%self%x(1:ndir)
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   ! Adaptive stepwidth RK4:
+   !> Adaptive stepwidth RK4:
 
-   ! initial solution vector:
-   y(1:ndir) = x(1:ndir) ! position of guiding center
-   y(ndir+1) = particle(ipart)%self%u(1) ! parallel momentum component (gamma v||)
-   y(ndir+2) = particle(ipart)%self%u(2) ! conserved magnetic moment Mr
-!   y(ndir+3) = particle(ipart)%self%u(3) ! Lorentz factor of particle
+   !> initial solution vector:
+   y(1:ndir) = x(1:ndir) !< position of guiding center
+   y(ndir+1) = particle(ipart)%self%u(1) !< parallel momentum component (gamma v||)
+   y(ndir+2) = particle(ipart)%self%u(2) !< conserved magnetic moment Mr
+!   y(ndir+3) = particle(ipart)%self%u(3) !< Lorentz factor of particle
 
-   h1 = dt_p/2.0d0; hmin=h1/128.0d0
-   call odeint(y,nvar,tloc,tloc+dt_p,eps,h1,hmin,nok,nbad,&
-        derivs_gca,rkqs,ierror)
+!>we temporarily save the solution vector, to replace the one from the euler
+!>timestep after euler integration
+   ytmp=y
 
-   if (ierror /= 0) then
-      print *, "odeint returned error code", ierror
-      print *, "1 means hmin too small, 2 means MAXSTP exceeded"
-      print *, "Having a problem with particle", iipart
-   end if
+call derivs_gca(particle(ipart)%self%t,y,dydt)
 
-   ! final solution vector:
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!> make an Euler step with the proposed timestep:
+
+   !> factor to ensure we capture all particles near the internal ghost cells. Can be adjusted during a run, after an interpolation error
+   euler_cfl=2.5d0
+
+   !> new solution vector:
+   y(1:ndir+2) = y(1:ndir+2) + euler_cfl * dt_p * dydt(1:ndir+2)
+   particle(ipart)%self%x(1:ndir) = y(1:ndir) ! position of guiding center
+   particle(ipart)%self%u(1)      = y(ndir+1) ! parallel momentum component(gamma v||)
+   particle(ipart)%self%u(2)      = y(ndir+2) ! conserved magnetic moment
+
+!> check if the particle is in the internal ghost cells
+int_factor =1.0d0
+
+if (.not. particle_in_igrid(ipart_working,igrid_working)) then
+
+!>if particle is not in the grid an euler timestep is taken instead of a RK4
+!>timestep. Then based on that we do an interpolation and check how much further
+!>the timestep for the RK4 has to be restricted.
+
+     !>factor to make integration more accurate for particles near the internal
+     !>ghost cells. This factor can be changed during integration after an
+     !>interpolation error. But one should be careful with timesteps for i/o
+
+!> flat interpolation:
+{ic^D = int((y(^D)-rnode(rpxmin^D_,igrid_working))/rnode(rpdx^D_,igrid_working)) + 1 + dixB\}
+
+!> linear interpolation:
+{
+if (px(igrid_working)%x({ic^DD},^D) .lt. y(^D)) then
+   ic1^D = ic^D
+else
+   ic1^D = ic^D -1
+end if
+ic2^D = ic1^D + 1
+\}
+
+int_factor =0.5d0
+
+{^D&
+if (ic1^D .le. ixGlo^D-2 .or. ic2^D .ge. ixGhi^D+2) then
+  int_factor = 0.05d0
+end if
+\}
+
+{^D&
+if (ic1^D .eq. ixGlo^D-1 .or. ic2^D .eq. ixGhi^D+1) then
+  int_factor = 0.1d0
+end if
+\}
+
+     dt_p=int_factor*dt_p
+end if
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!> replace the solution vector with the original as it was before the Euler timestep
+   y(1:ndir+2) = ytmp(1:ndir+2)
+
+   particle(ipart)%self%x(1:ndir) = ytmp(1:ndir) !< position of guiding center
+   particle(ipart)%self%u(1)      = ytmp(ndir+1) !< parallel momentum component (gamma v||)
+   particle(ipart)%self%u(2)      = ytmp(ndir+2) !< conserved magnetic moment
+
+
+!< specify a minimum step hmin. If the timestep reaches this minimum, multiply by
+!< a factor 100 to make sure the RK integration doesn't crash
+   h1 = dt_p/2.0d0; hmin=1.0d-9; h_old=dt_p/2.0d0
+
+   if(h1 .lt. hmin)then
+           h1=hmin
+           dt_p=2.0d0*h1
+   endif
+
+!< RK4 integration with adaptive stepwidth
+   call odeint(y,nvar,tloc,tloc+dt_p,eps,h1,hmin,nok,nbad,derivs_gca_rk,rkqs)
+
+!< original RK integration without interpolation in ghost cells
+! call odeint(y,nvar,tloc,tloc+dt_p,eps,h1,hmin,nok,nbad,derivs_gca,rkqs)
+
+!< final solution vector after rk integration
    particle(ipart)%self%x(1:ndir) = y(1:ndir)
    particle(ipart)%self%u(1)      = y(ndir+1)
    particle(ipart)%self%u(2)      = y(ndir+2)
-!   particle(ipart)%self%u(3)      = y(ndir+3)
+   !particle(ipart)%self%u(3)      = y(ndir+3)
 
-   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-   ! mean Lorentz factor:
-
-   call get_vec(igrid_working,y(1:ndir),tloc+dt_p,b,bp1_,bp^NC_)
-   call get_vec(igrid_working,y(1:ndir),tloc+dt_p,e,ep1_,ep^NC_)
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!> now calculate other quantities, mean Lorentz factor, drifts, perpendicular velocity:
+   call get_vec_rk(igrid_working,y(1:ndir),tloc+dt_p,b,bp1_,bp^NC_)
+   call get_vec_rk(igrid_working,y(1:ndir),tloc+dt_p,e,ep1_,ep^NC_)
 
    absb         = sqrt( {^C& b(^C)**2 |+} )
    bhat(1:ndir) = b(1:ndir) / absb
 
+   epar         = {^C& e(^C)*bhat(^C) |+}
+
    call cross(e,bhat,ue)
    ue(1:ndir)   = ue(1:ndir)*CONST_c / absb
+   ueabs = sqrt({^C& ue(^C)**2|+})
 
    kappa = sqrt(1.0d0 - ({^C& ue(^C)**2|+})/CONST_c**2)
 
@@ -128,18 +213,97 @@ do iipart=1,nparticles_active_on_mype;ipart=particles_active_on_mype(iipart);
 
    particle(ipart)%self%u(3)      = gamma
 
+   vpar = particle(ipart)%self%u(1)/particle(ipart)%self%u(3)
+   mompar = particle(ipart)%self%u(1)
+   
+   call get_vec_rk(igrid_working,y(1:ndir),tloc+dt_p,bdotgradb,b_dot_grad_b1_,b_dot_grad_b^NC_)
+   call get_vec_rk(igrid_working,y(1:ndir),tloc+dt_p,uedotgradb,ue_dot_grad_b1_,ue_dot_grad_b^NC_)
+   call get_vec_rk(igrid_working,y(1:ndir),tloc+dt_p,gradkappaB,grad_kappa_B1_,grad_kappa_B^NC_)
+   call get_vec_rk(igrid_working,y(1:ndir),tloc+dt_p,bdotgradue,b_dot_grad_ue1_,b_dot_grad_ue^NC_)
+   call get_vec_rk(igrid_working,y(1:ndir),tloc+dt_p,uedotgradue,ue_dot_grad_ue1_,ue_dot_grad_ue^NC_)
+
+   drift1(1:ndir) = bhat(1:ndir)/(absb*kappa**2)
+
+   drift2(1:ndir) = Mr*CONST_C/(gamma*q)*gradkappaB(1:ndir)
+   call cross(drift1,drift2,gradBdrift)
+   gradBdrift_abs = sqrt({^C& gradBdrift(^C)**2|+})
+
+   drift3(1:ndir) = upar*epar/(gamma*CONST_C)*ue(1:ndir)
+   call cross(drift1,drift3,reldrift)
+   reldrift_abs = sqrt({^C& reldrift(^C)**2|+})
+
+   drift4(1:ndir) = m*CONST_C/q* ( upar**2/gamma*bdotgradb(1:ndir))
+   call cross(drift1,drift4,bdotgradbdrift)
+   bdotgradbdrift_abs = sqrt({^C& bdotgradbdrift(^C)**2|+})
+
+   drift5(1:ndir) = m*CONST_C/q* ( upar*uedotgradb(1:ndir))
+   call cross(drift1,drift5,uedotgradbdrift)
+   uedotgradbdrift_abs = sqrt({^C& uedotgradbdrift(^C)**2|+})
+
+   drift6(1:ndir) = m*CONST_C/q* ( upar*bdotgradue(1:ndir))
+   call cross(drift1,drift6,bdotgraduedrift)
+   bdotgraduedrift_abs = sqrt({^C& bdotgraduedrift(^C)**2|+})
+
+   drift7(1:ndir) = m*CONST_C/q* (gamma*uedotgradue(1:ndir))
+   call cross(drift1,drift7,uedotgraduedrift)
+   uedotgraduedrift_abs = sqrt({^C& uedotgraduedrift(^C)**2|+})
+
+   momentumpar1 = m*gamma*vpar**2*({^C& ue(^C)*bdotgradb(^C)|+})
+   momentumpar2 = m*gamma*vpar*({^C& ue(^C)*uedotgradb(^C)|+})
+   momentumpar3 = q*epar
+   momentumpar4 = -(Mr/gamma)*({^C& bhat(^C)*gradkappaB(^C)|+})
+
+
 
 ! **************************************************
-! Payload update
+!> Payload update
 ! **************************************************
 
-      ! current gyroradius
+      !> current gyroradius
       particle(ipart)%self%payload(1) = sqrt(2.0d0*m*Mr*absb)/abs(q*absb)*CONST_c
 
+      !> pitch angle
+      particle(ipart)%self%payload(2) = datan(sqrt((2.0d0*Mr*absb)/(m*gamma**2))/vpar)
+
+      !> particle v_perp
+      particle(ipart)%self%payload(3) = sqrt((2.0d0*Mr*absb)/(m*gamma**2))
+
+      !> particle parallel momentum term 1
+      particle(ipart)%self%payload(4) = momentumpar1
+
+      !> particle parallel momentum term 2
+      particle(ipart)%self%payload(5) = momentumpar2
+
+      !> particle parallel momentum term 3
+      particle(ipart)%self%payload(6) = momentumpar3
+
+      !> particle parallel momentum term 4
+      particle(ipart)%self%payload(7) = momentumpar4
+     
+      !> particle ExB drift
+      particle(ipart)%self%payload(8) = ueabs 
+
+      !> relativistic drift
+      particle(ipart)%self%payload(9) = reldrift_abs
+
+      !> gradB drift
+      particle(ipart)%self%payload(10) = gradBdrift_abs
+
+      !> bdotgradb drift
+      particle(ipart)%self%payload(11) = bdotgradbdrift_abs
+
+      !> uedotgradb drift
+      particle(ipart)%self%payload(12) = uedotgradbdrift_abs
+      
+      !> bdotgradue drift
+      particle(ipart)%self%payload(13) = bdotgraduedrift_abs
+
+      !> uedotgradue drift
+      particle(ipart)%self%payload(14) = uedotgraduedrift_abs
 
 
    ! **************************************************
-   ! Time update
+   !> Time update
    ! **************************************************
    particle(ipart)%self%t = particle(ipart)%self%t + dt_p
 
@@ -147,13 +311,16 @@ end do
 
 end subroutine integrate_particles_gca
 !=============================================================================
-subroutine derivs_gca(t_s,y,dydt)
+subroutine derivs_gca_rk(t_s,y,dydt)
 
+use mod_odeint
+use mod_particles
 use mod_gridvars
 use mod_particles, only: particle
 use constants
 include 'amrvacdef.f'
 
+integer                         :: ic^D
 double precision                :: t_s, y(*)
 double precision                :: dydt(*)
 ! .. local ..
@@ -161,15 +328,91 @@ double precision,dimension(^NC) :: ue, b, e, x, bhat, bdotgradb, uedotgradb, gra
 double precision,dimension(^NC) :: bdotgradue, uedotgradue, u, utmp1, utmp2, utmp3
 double precision                :: upar, Mr, gamma, absb, q, m, epar, kappa
 !-----------------------------------------------------------------------------
+!> Here the terms in the guiding centre equations of motion are interpolated for
+!> the RK integration. The interpolation is also done in the ghost cells such
+!> that the RK integration does not give an error
+
 q = particle(ipart_working)%self%q
 m = particle(ipart_working)%self%m
 
 x(1:ndir) = y(1:ndir)
-upar      = y(ndir+1) ! gamma v||
+upar      = y(ndir+1) !< gamma v||
 Mr        = y(ndir+2)
 !gamma     = y(ndir+3)
 
-!print*,ipart_working,x(1:ndir),particle(ipart_working)%self%dt
+call get_vec_rk(igrid_working,x,t_s,b,bp1_,bp^NC_)
+call get_vec_rk(igrid_working,x,t_s,e,ep1_,ep^NC_)
+
+call get_vec_rk(igrid_working,x,t_s,bdotgradb,b_dot_grad_b1_,b_dot_grad_b^NC_)
+call get_vec_rk(igrid_working,x,t_s,uedotgradb,ue_dot_grad_b1_,ue_dot_grad_b^NC_)
+call get_vec_rk(igrid_working,x,t_s,gradkappaB,grad_kappa_B1_,grad_kappa_B^NC_)
+call get_vec_rk(igrid_working,x,t_s,bdotgradue,b_dot_grad_ue1_,b_dot_grad_ue^NC_)
+call get_vec_rk(igrid_working,x,t_s,uedotgradue,ue_dot_grad_ue1_,ue_dot_grad_ue^NC_)
+
+absb         = sqrt( {^C& b(^C)**2 |+} )
+bhat(1:ndir) = b(1:ndir) / absb
+
+epar         = {^C& e(^C)*bhat(^C) |+}
+
+call cross(e,bhat,ue)
+ue(1:ndir)   = ue(1:ndir)*CONST_c / absb
+
+kappa = sqrt(1.0d0 - ({^C& ue(^C)**2|+})/CONST_c**2)
+
+gamma = sqrt(1.0d0+upar**2/CONST_c**2+2.0d0*Mr*absb/m/CONST_c**2)/kappa
+
+utmp1(1:ndir) = bhat(1:ndir)/(absb*kappa**2)
+utmp2(1:ndir) = Mr*CONST_C/(gamma*q)*gradkappaB(1:ndir) &
+ + upar*epar/(gamma*CONST_C)*ue(1:ndir) &
+     + m*CONST_C/q* ( upar**2/gamma*bdotgradb(1:ndir) + upar*uedotgradb(1:ndir) &
+     + upar*bdotgradue(1:ndir) + gamma*uedotgradue(1:ndir))
+
+call cross(utmp1,utmp2,utmp3)
+
+u(1:ndir) = ue(1:ndir) + utmp3(1:ndir)
+
+!> done assembling the terms, now write rhs:
+
+dydt(1:ndir) = ( u(1:ndir) + upar/gamma * bhat(1:ndir) )/ UNIT_LENGTH
+
+dydt(ndir+1) = ({^C& ue(^C) * ( upar*bdotgradb(^C) + gamma*uedotgradb(^C) ) |+}) &
+     + q/m*epar - Mr/(m*gamma) * ({^C& bhat(^C)*gradkappaB(^C)|+})
+
+
+dydt(ndir+2) = 0.0d0 !< magnetic moment is conserved
+
+!dydt(ndir+3) = q/(m*CONST_c**2) * ({^C& dydt(^C)*e(^C)|+}) * UNIT_LENGTH
+
+end subroutine derivs_gca_rk
+!=============================================================================
+subroutine derivs_gca(t_s,y,dydt)
+
+use mod_odeint
+use mod_particles
+use mod_gridvars
+use mod_particles, only: particle
+use constants
+
+include 'amrvacdef.f'
+
+integer                         :: ic^D, igrid_particle, ipe_particle, ipe
+double precision                :: t_s, y(*)
+double precision                :: dydt(*)
+! .. local ..
+double precision,dimension(^NC) :: ue, b, e, x, bhat, bdotgradb, uedotgradb, gradkappaB
+double precision,dimension(^NC) :: bdotgradue, uedotgradue, u, utmp1, utmp2, utmp3
+double precision                :: upar, Mr, gamma, absb, q, m, epar, kappa
+!-----------------------------------------------------------------------------
+!> Here the normal interpolation is done for the terms in the GCA equations of
+!> motion
+
+q = particle(ipart_working)%self%q
+m = particle(ipart_working)%self%m
+
+x(1:ndir) = y(1:ndir)
+upar      = y(ndir+1) !< gamma v||
+Mr        = y(ndir+2)
+!gamma     = y(ndir+3)
 
 call get_vec(igrid_working,x,t_s,b,bp1_,bp^NC_)
 call get_vec(igrid_working,x,t_s,e,ep1_,ep^NC_)
@@ -202,19 +445,16 @@ call cross(utmp1,utmp2,utmp3)
 
 u(1:ndir) = ue(1:ndir) + utmp3(1:ndir)
 
-! done assembling the terms, now write rhs:
+!> done assembling the terms, now write rhs:
 
 dydt(1:ndir) = ( u(1:ndir) + upar/gamma * bhat(1:ndir) )/ UNIT_LENGTH
 
 dydt(ndir+1) = ({^C& ue(^C) * ( upar*bdotgradb(^C) + gamma*uedotgradb(^C) ) |+}) &
      + q/m*epar - Mr/(m*gamma) * ({^C& bhat(^C)*gradkappaB(^C)|+})
 
-dydt(ndir+2) = 0.0d0 ! magnetic moment is conserved
+dydt(ndir+2) = 0.0d0 !< magnetic moment is conserved
 
 !dydt(ndir+3) = q/(m*CONST_c**2) * ({^C& dydt(^C)*e(^C)|+}) * UNIT_LENGTH
-
-!print*,ipart_working,y(1:ndir+1),dydt(1:ndir+1)
-
 
 end subroutine derivs_gca
 !=============================================================================
@@ -225,15 +465,18 @@ use constants
 use mod_gridvars, only: igrid_working, ipart_working
 include 'amrvacdef.f'
 
-integer                         :: ipart, iipart, nout
+logical                                   :: BC_applied
+integer                         :: ipart, iipart, nout, ic^D, igrid_particle, ipe_particle, ipe
 double precision                :: t_min_mype, tout, dt_particles_mype, dt_cfl0, dt_cfl1, dt_a
 double precision                :: dxmin, vp, a, gammap
-double precision                :: v(1:ndir), y(1:^NC+2), dydt(1:^NC+2), v0(1:ndir), v1(1:ndir)
+double precision                :: v(1:ndir), y(1:^NC+2),ytmp(1:^NC+2), dydt(1:^NC+2), v0(1:ndir), v1(1:ndir), dydt1(1:^NC+2)
 double precision                :: ap0, ap1, dt_cfl_ap0, dt_cfl_ap1, dt_cfl_ap
 double precision                :: dt_max_output, dt_max_time, dt_euler, dt_tmp
-double precision, parameter     :: cfl=0.8d0, uparcfl=0.8d0
+double precision, parameter     :: cfl=0.8d0, uparcfl=0.8d0 !< make these particle cfl conditions more restrictive if you are interpolating out of the grid
 double precision, parameter     :: uparmin=1.0d-6*CONST_C
 !-----------------------------------------------------------------------------
+!> Here the timestep for the guiding centre integration is chosen
+
 dt_particles      = bigdouble
 dt_particles_mype = bigdouble
 t_min_mype        = bigdouble
@@ -244,60 +487,76 @@ do iipart=1,nparticles_active_on_mype;ipart=particles_active_on_mype(iipart);
 
    igrid_working = particle(ipart)%igrid
    ipart_working = particle(ipart)%self%index
-
+  
    dt_tmp = (tmax_particles - particle(ipart)%self%t)
    if (dt_tmp .le. 0.0d0) &
         dt_tmp = smalldouble
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!> make sure we step only one cell at a time, first check CFL at current location
+!> then we make an Euler step to the new location and check the new CFL 
+!> we simply take the minimum of the two timesteps. 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-! make sure we step only one cell at a time, first check CFL at current location
-! then we make an Euler step to the new location and check the new CFL 
-! we simply take the minimum of the two timesteps. 
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-! added safety factor cfl:
+!> added safety factor cfl:
 {#IFNDEF D1
    dxmin  = min({rnode(rpdx^D_,particle(ipart)%igrid)})*cfl
 }{#IFDEF D1
    dxmin  = rnode(rpdx1_,particle(ipart)%igrid)*cfl
 }
    ! initial solution vector:
-   y(1:ndir) = particle(ipart)%self%x(1:ndir) ! position of guiding center
-   y(ndir+1) = particle(ipart)%self%u(1) ! parallel momentum component (gamma v||)
-   y(ndir+2) = particle(ipart)%self%u(2) ! conserved magnetic moment
-!   y(ndir+3) = particle(ipart)%self%u(3) ! Lorentz factor of guiding centre
+   y(1:ndir) = particle(ipart)%self%x(1:ndir) !< position of guiding center
+   y(ndir+1) = particle(ipart)%self%u(1) !< parallel momentum component (gamma v||)
+   y(ndir+2) = particle(ipart)%self%u(2) !< conserved magnetic moment
+   ytmp=y
+!   y(ndir+3) = particle(ipart)%self%u(3) !< Lorentz factor of guiding centre
 
    call derivs_gca(particle(ipart)%self%t,y,dydt)
-
    v0(1:ndir) = dydt(1:ndir)
    ap0        = dydt(ndir+1)
-! guiding center velocity:
+
+!> guiding center velocity:
    {^C& v(^C)   = abs(dydt(^C))\}
    vp = sqrt({^C& (v(^C))**2|+})
 
    dt_cfl0    = dxmin/vp
    dt_cfl_ap0 = uparcfl * abs(max(abs(y(ndir+1)),uparmin) / ap0)
-   dt_cfl_ap0 = min(dt_cfl_ap0, uparcfl * sqrt(abs(UNIT_LENGTH*dxmin/(ap0+smalldouble))) )
+!  dt_cfl_ap0 = min(dt_cfl_ap0, uparcfl * sqrt(abs(UNIT_LENGTH*dxmin/(ap0+smalldouble))) )
 
-! make an Euler step with the proposed timestep:
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   ! new solution vector:
+!> make an Euler step with the proposed timestep:
+ 
+  !> new solution vector:
    dt_euler = min(dt_tmp,dt_cfl0,dt_cfl_ap0)
    y(1:ndir+2) = y(1:ndir+2) + dt_euler * dydt(1:ndir+2)
-   call derivs_gca(particle(ipart)%self%t+dt_euler,y,dydt)
+   
+   particle(ipart)%self%x(1:ndir) = y(1:ndir) !< position of guiding center
+   particle(ipart)%self%u(1)      = y(ndir+1) !< parallel momentum component (gamma v||)
+   particle(ipart)%self%u(2)      = y(ndir+2) !< conserved magnetic moment
+   
+!> first check if the particle is outside the physical domain or in the ghost cells
 
+if (.not. particle_in_igrid(ipart_working,igrid_working)) then
+   y(1:ndir+2) = ytmp(1:ndir+2)
+end if
+
+   call derivs_gca_rk(particle(ipart)%self%t+dt_euler,y,dydt)
+  !call derivs_gca(particle(ipart)%self%t+dt_euler,y,dydt)
+   
    v1(1:ndir) = dydt(1:ndir)
    ap1        = dydt(ndir+1)
-! guiding center velocity:
+!> guiding center velocity:
    {^C& v(^C)   = abs(dydt(^C))\}
    vp = sqrt({^C& (v(^C))**2|+})
 
    dt_cfl1    = dxmin/vp
    dt_cfl_ap1 = uparcfl * abs(max(abs(y(ndir+1)),uparmin) / ap1)
-   dt_cfl_ap1 = min(dt_cfl_ap1, uparcfl * sqrt(abs(UNIT_LENGTH*dxmin/(ap1+smalldouble))) )
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  ! dt_cfl_ap1 = min(dt_cfl_ap1, uparcfl * sqrt(abs(UNIT_LENGTH*dxmin/(ap1+smalldouble))) )
+  
    dt_tmp = min(dt_euler, dt_cfl1, dt_cfl_ap1)
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+   particle(ipart)%self%x(1:ndir) = ytmp(1:ndir) !< position of guiding center
+   particle(ipart)%self%u(1)      = ytmp(ndir+1) !< parallel momentum component (gamma v||)
+   particle(ipart)%self%u(2)      = ytmp(ndir+2) !< conserved magnetic moment
+  !      dt_tmp = min(dt_cfl1, dt_cfl_ap1)
 
 
 
@@ -321,9 +580,9 @@ do iipart=1,nparticles_active_on_mype;ipart=particles_active_on_mype(iipart);
 
 
 !**************************************************
-! Make sure we dont miss an output or tmax_particles:
+!> Make sure we don't miss an output or tmax_particles:
 !**************************************************
-   ! corresponding output slot:
+   !> corresponding output slot:
    nout = int(particle(ipart)%self%t/dtsave_ensemble) + 1
    tout = dble(nout) * dtsave_ensemble
    if (particle(ipart)%self%t+particle(ipart)%self%dt .gt. tout) then
@@ -332,7 +591,7 @@ do iipart=1,nparticles_active_on_mype;ipart=particles_active_on_mype(iipart);
            dt_max_output = smalldouble * tout
    end if
 
-   ! bring to tmax_particles:
+   !> bring to tmax_particles:
    if (particle(ipart)%self%t+particle(ipart)%self%dt .gt. tmax_particles) then
 !        particle(ipart)%self%dt = max(tmax_particles - particle(ipart)%self%t , smalldouble * tmax_particles)
         dt_max_time = (tmax_particles - particle(ipart)%self%t)
@@ -343,20 +602,17 @@ do iipart=1,nparticles_active_on_mype;ipart=particles_active_on_mype(iipart);
 !**************************************************
    particle(ipart)%self%dt = min(particle(ipart)%self%dt,dt_max_time,dt_max_output)
 
-!print*, ipart_working, dt_cfl0, dt_cfl1, dt_euler, dt_cfl_ap0, dt_cfl_ap1, dt_a, dt_max_time, dt_max_output
-
-
    dt_particles_mype = min(particle(ipart)%self%dt,dt_particles_mype)
 
    t_min_mype = min(t_min_mype,particle(ipart)%self%t)
 
-end do !ipart
+end do !< ipart loop
 
-! keep track of the global minimum:
+!> keep track of the global minimum:
 call MPI_ALLREDUCE(dt_particles_mype,dt_particles,1,MPI_DOUBLE_PRECISION,MPI_MIN,&
      icomm,ierrmpi)
 
-! keep track of the minimum particle time:
+!> keep track of the minimum particle time:
 call MPI_ALLREDUCE(t_min_mype,t_particles,1,MPI_DOUBLE_PRECISION,MPI_MIN,&
      icomm,ierrmpi)
 
@@ -369,7 +625,7 @@ end subroutine set_particles_dt_gca
 {#IFDEF PARTICLES_ADVECT
 !=============================================================================
 subroutine integrate_particles_advect()
-! this solves dx/dt=v for particles
+!> this solves dx/dt=v for particles
 
 use mod_odeint
 use mod_particles
@@ -381,7 +637,7 @@ double precision, dimension(1:ndir) :: v, x
 integer                             :: igrid
 double precision                    :: rho, rho1, rho2, td, tloc
 double precision, dimension(ixG^T,1:nw)   :: w
-! for odeint:
+!> for odeint:
 integer                          :: nok, nbad
 double precision                 :: h1
 double precision,parameter       :: eps=1.0d-6, hmin=1.0d-8
@@ -400,11 +656,11 @@ do iipart=1,nparticles_active_on_mype;ipart=particles_active_on_mype(iipart);
    
 
    ! **************************************************
-   ! Position update
+   !> Position update
    ! **************************************************
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   ! Simple forward Euler:
+   !> Simple forward Euler:
    call get_vec(igrid,x,tloc,v,vp1_,vp^NC_)
    particle(ipart)%self%u(1:ndir) = v(1:ndir)
 
@@ -415,7 +671,7 @@ do iipart=1,nparticles_active_on_mype;ipart=particles_active_on_mype(iipart);
    
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   ! Adaptive stepwidth RK4:
+   !> Adaptive stepwidth RK4:
 !   h1 = dt_p/2.0d0
 !   call odeint(x,nvar,tloc,tloc+dt_p,eps,h1,hmin,nok,nbad,derivs_advect,rkqs)
 !   particle(ipart)%self%x(1:ndir) = x(1:ndir)
@@ -425,7 +681,7 @@ do iipart=1,nparticles_active_on_mype;ipart=particles_active_on_mype(iipart);
 
 
    ! **************************************************
-   ! Velocity update
+   !> Velocity update
    ! **************************************************
 
    call get_vec(igrid,x,tloc+dt_p,v,vp1_,vp^NC_)
@@ -436,13 +692,13 @@ do iipart=1,nparticles_active_on_mype;ipart=particles_active_on_mype(iipart);
 
 
    ! **************************************************
-   ! Payload update
+   !> Payload update
    ! **************************************************
    
-   ! To give an example, we set the payload to the interpolated density at 
-   ! the particles position.  
-   ! In general, it would be better to add the auxilary variable to mod_gridvars 
-   ! since then you can use the convenient subroutine get_vec() for this.  
+   !> To give an example, we set the payload to the interpolated density at 
+   !> the particles position.  
+   !> In general, it would be better to add the auxilary variable to mod_gridvars 
+   !> since then you can use the convenient subroutine get_vec() for this.  
    
    
    !if (.not.time_advance) then
@@ -472,7 +728,7 @@ do iipart=1,nparticles_active_on_mype;ipart=particles_active_on_mype(iipart);
 
 
    ! **************************************************
-   ! Time update
+   !> Time update
    ! **************************************************
    particle(ipart)%self%t = particle(ipart)%self%t + dt_p
 
@@ -514,11 +770,11 @@ t_min_mype        = bigdouble
 
 do iipart=1,nparticles_active_on_mype;ipart=particles_active_on_mype(iipart);
 
-! make sure we step only one cell at a time:
+!> make sure we step only one cell at a time:
 {v(^C)   = abs(particle(ipart)%self%u(^C))\}
 
 {^IFPHI 
-! convert to angular velocity:
+!> convert to angular velocity:
 if (typeaxial =='cylindrical') v(phi_) = abs(v(phi_)/particle(ipart)%self%x(r_))
 }
 
@@ -531,13 +787,13 @@ if (typeaxial =='cylindrical') v(phi_) = abs(v(phi_)/particle(ipart)%self%x(r_))
 
 {^IFPHI
 if (typeaxial =='cylindrical') then 
-! phi-momentum leads to radial velocity:
+!> phi-momentum leads to radial velocity:
 if (phi_ .gt. ndim) dt_cfl = min(dt_cfl, &
      sqrt(rnode(rpdx1_,particle(ipart)%igrid)/particle(ipart)%self%x(r_)) &
      / v(phi_))
-! limit the delta phi of the orbit (just for aesthetic reasons):
+!> limit the delta phi of the orbit (just for aesthetic reasons):
    dt_cfl = min(dt_cfl,0.1d0/v(phi_))
-! take some care at the axis:
+!> take some care at the axis:
    dt_cfl = min(dt_cfl,(particle(ipart)%self%x(r_)+smalldouble)/v(r_))
 end if
 }
@@ -546,15 +802,15 @@ end if
 
 
 !**************************************************
-! Make sure we dont miss an output or tmax_particles:
+!> Make sure we don't miss an output or tmax_particles:
 !**************************************************
-   ! corresponding output slot:
+   !> corresponding output slot:
    nout = int(particle(ipart)%self%t/dtsave_ensemble) + 1
    tout = dble(nout) * dtsave_ensemble
    if (particle(ipart)%self%t+particle(ipart)%self%dt .gt. tout) &
         particle(ipart)%self%dt = max(tout - particle(ipart)%self%t , smalldouble * tout)
 
-   ! bring to tmax_particles:
+   !> bring to tmax_particles:
    if (particle(ipart)%self%t+particle(ipart)%self%dt .gt. tmax_particles) &
         particle(ipart)%self%dt = max(tmax_particles - particle(ipart)%self%t , smalldouble * tmax_particles)
 !**************************************************
@@ -565,231 +821,30 @@ end if
 
    t_min_mype = min(t_min_mype,particle(ipart)%self%t)
 
-end do !ipart
+end do !< ipart loop
 
-! keep track of the global minimum:
+!> keep track of the global minimum:
 call MPI_ALLREDUCE(dt_particles_mype,dt_particles,1,MPI_DOUBLE_PRECISION,MPI_MIN,&
      icomm,ierrmpi)
 
-! keep track of the minimum particle time:
+!> keep track of the minimum particle time:
 call MPI_ALLREDUCE(t_min_mype,t_particles,1,MPI_DOUBLE_PRECISION,MPI_MIN,&
      icomm,ierrmpi)
 
 end subroutine set_particles_dt_advect
 }
 !=============================================================================
-{#IFDEF PARTICLES_SPACECRAFT
-subroutine integrate_particles_spacecraft()
-!> extract data from chosen points -> synthetic spacecrafts 
-!> TODO : add orbit to spacecrafts
-
-use mod_particles
-use mod_gridvars, only: igrid_working, interpolate_var
-include 'amrvacdef.f'
-
-integer                                           :: ipart, iipart, igrid
-integer                                           :: 
-double precision                                  :: dt_p, td, tloc, rho, rho1, rho2, cur, cur1, cur2
-double precision                                  :: p, p1, p2, tp, tp1, tp2, tr, tr1, tr2
-double precision                                  :: v1, v11, v12, v2, v21, v22, v3, v31, v32 
-double precision                                  :: b1, b11, b12, b2, b21, b22, b3, b31, b32
-double precision, dimension(1:ndir)               :: x
-double precision, dimension(ixG^T,1:nw+nwauxio)   :: w
-double precision, dimension(1:nw+nwauxio)         :: normconv
-!-----------------------------------------------------------------------------
-normconv=one
-!> get the details of the particle
-do iipart=1,nparticles_active_on_mype;ipart=particles_active_on_mype(iipart);   
-   dt_p = particle(ipart)%self%dt
-   igrid = particle(ipart)%igrid
-   igrid_working = igrid
-   tloc = particle(ipart)%self%t
-   x(1:ndir) = particle(ipart)%self%x(1:ndir)
-
-   ! **************************************************
-   !> Payload update :
-   !> interpolate the different fields, including auxiliary 
-   !> outputs if included as shown for cur and tp
-   !> do not forget to update npayloads in mod_particles
-   ! **************************************************
-
-   if (.not.time_advance) then
-      w(ixG^T,1:nw) = pw(igrid)%w(ixG^T,1:nw)
-!      if(nwauxio>=1)then
-!      call specialvar_output(ixG^LL,ixM^LL^LADD1,w,px(igrid)%x,normconv)
-!      endif
-      call primitive(ixG^LL,ixG^LL,w,px(igrid)%x)
-      call interpolate_var(igrid,ixG^LL,ixM^LL,pw(igrid)%w(ixG^T,v1_),px(igrid)%x(ixG^T,1:ndim),x,v1)
-      call interpolate_var(igrid,ixG^LL,ixM^LL,pw(igrid)%w(ixG^T,v2_),px(igrid)%x(ixG^T,1:ndim),x,v2)
-      call interpolate_var(igrid,ixG^LL,ixM^LL,pw(igrid)%w(ixG^T,v3_),px(igrid)%x(ixG^T,1:ndim),x,v3)
-      call interpolate_var(igrid,ixG^LL,ixM^LL,pw(igrid)%w(ixG^T,b1_),px(igrid)%x(ixG^T,1:ndim),x,b1)
-      call interpolate_var(igrid,ixG^LL,ixM^LL,pw(igrid)%w(ixG^T,b2_),px(igrid)%x(ixG^T,1:ndim),x,b2)
-      call interpolate_var(igrid,ixG^LL,ixM^LL,pw(igrid)%w(ixG^T,b3_),px(igrid)%x(ixG^T,1:ndim),x,b3)
-      call interpolate_var(igrid,ixG^LL,ixM^LL,pw(igrid)%w(ixG^T,rho_),px(igrid)%x(ixG^T,1:ndim),x,rho)
-      call interpolate_var(igrid,ixG^LL,ixM^LL,pw(igrid)%w(ixG^T,p_),px(igrid)%x(ixG^T,1:ndim),x,p)
-      call interpolate_var(igrid,ixG^LL,ixM^LL,pw(igrid)%w(ixG^T,tr1_),px(igrid)%x(ixG^T,1:ndim),x,tr)
-      call interpolate_var(igrid,ixG^LL,ixM^LL,pw(igrid)%w(ixG^T,nw+1),px(igrid)%x(ixG^T,1:ndim),x,cur)
-      call interpolate_var(igrid,ixG^LL,ixM^LL,pw(igrid)%w(ixG^T,nw+2),px(igrid)%x(ixG^T,1:ndim),x,tp)
-   else ! mean between the two time steps
-      ! old time step
-      w(ixG^T,1:nw) = pwold(igrid)%w(ixG^T,1:nw)
-!      if(nwauxio>=1)then
-!      call specialvar_output(ixG^LL,ixM^LL^LADD1,w,px(igrid)%x,normconv)
-!      endif
-      call primitive(ixG^LL,ixG^LL,w,px(igrid)%x)
-      call interpolate_var(igrid,ixG^LL,ixM^LL,w(ixG^T,v1_),px(igrid)%x(ixG^T,1:ndim),x,v11)
-      call interpolate_var(igrid,ixG^LL,ixM^LL,w(ixG^T,v2_),px(igrid)%x(ixG^T,1:ndim),x,v21)
-      call interpolate_var(igrid,ixG^LL,ixM^LL,w(ixG^T,v3_),px(igrid)%x(ixG^T,1:ndim),x,v31)
-      call interpolate_var(igrid,ixG^LL,ixM^LL,w(ixG^T,b1_),px(igrid)%x(ixG^T,1:ndim),x,b11)
-      call interpolate_var(igrid,ixG^LL,ixM^LL,w(ixG^T,b2_),px(igrid)%x(ixG^T,1:ndim),x,b21)
-      call interpolate_var(igrid,ixG^LL,ixM^LL,w(ixG^T,b3_),px(igrid)%x(ixG^T,1:ndim),x,b31)
-      call interpolate_var(igrid,ixG^LL,ixM^LL,w(ixG^T,rho_),px(igrid)%x(ixG^T,1:ndim),x,rho1)
-      call interpolate_var(igrid,ixG^LL,ixM^LL,w(ixG^T,p_),px(igrid)%x(ixG^T,1:ndim),x,p1)
-      call interpolate_var(igrid,ixG^LL,ixM^LL,w(ixG^T,tr1_),px(igrid)%x(ixG^T,1:ndim),x,tr1)
-      call interpolate_var(igrid,ixG^LL,ixM^LL,w(ixG^T,nw+1),px(igrid)%x(ixG^T,1:ndim),x,cur1)
-      call interpolate_var(igrid,ixG^LL,ixM^LL,w(ixG^T,nw+2),px(igrid)%x(ixG^T,1:ndim),x,tp1)
-      ! advanced time step
-      w(ixG^T,1:nw) = pw(igrid)%w(ixG^T,1:nw)
-!      if(nwauxio>=1)then
-!      call specialvar_output(ixG^LL,ixM^LL^LADD1,w,px(igrid)%x,normconv)
-!      endif
-      call primitive(ixG^LL,ixG^LL,w,px(igrid)%x)
-      call interpolate_var(igrid,ixG^LL,ixM^LL,w(ixG^T,v1_),px(igrid)%x(ixG^T,1:ndim),x,v12)
-      call interpolate_var(igrid,ixG^LL,ixM^LL,w(ixG^T,v2_),px(igrid)%x(ixG^T,1:ndim),x,v22)
-      call interpolate_var(igrid,ixG^LL,ixM^LL,w(ixG^T,v3_),px(igrid)%x(ixG^T,1:ndim),x,v32)
-      call interpolate_var(igrid,ixG^LL,ixM^LL,w(ixG^T,b1_),px(igrid)%x(ixG^T,1:ndim),x,b12)
-      call interpolate_var(igrid,ixG^LL,ixM^LL,w(ixG^T,b2_),px(igrid)%x(ixG^T,1:ndim),x,b22)
-      call interpolate_var(igrid,ixG^LL,ixM^LL,w(ixG^T,b3_),px(igrid)%x(ixG^T,1:ndim),x,b32)
-      call interpolate_var(igrid,ixG^LL,ixM^LL,w(ixG^T,rho_),px(igrid)%x(ixG^T,1:ndim),x,rho2)
-      call interpolate_var(igrid,ixG^LL,ixM^LL,w(ixG^T,p_),px(igrid)%x(ixG^T,1:ndim),x,p2)
-      call interpolate_var(igrid,ixG^LL,ixM^LL,w(ixG^T,tr1_),px(igrid)%x(ixG^T,1:ndim),x,tr2)
-      call interpolate_var(igrid,ixG^LL,ixM^LL,w(ixG^T,nw+1),px(igrid)%x(ixG^T,1:ndim),x,cur2)
-      call interpolate_var(igrid,ixG^LL,ixM^LL,w(ixG^T,nw+2),px(igrid)%x(ixG^T,1:ndim),x,tp2)
-      td  = (tloc/(UNIT_LENGTH/UNIT_VELOCITY) - t) / dt
-      v1  = v12  * (1.0d0 - td) + v12  * td
-      v2  = v22  * (1.0d0 - td) + v22  * td
-      v3  = v32  * (1.0d0 - td) + v32  * td
-      b1  = b12  * (1.0d0 - td) + b12  * td
-      b2  = b22  * (1.0d0 - td) + b22  * td
-      b3  = b32  * (1.0d0 - td) + b32  * td
-      rho = rho1 * (1.0d0 - td) + rho2 * td
-      p   = p1   * (1.0d0 - td) + p2   * td
-      tr  = tr1  * (1.0d0 - td) + tr2  * td
-      cur = cur1 * (1.0d0 - td) + cur2 * td
-      tp  = tp1  * (1.0d0 - td) + tp2  * td
-   end if
-   particle(ipart)%self%payload(1) = v1
-   particle(ipart)%self%payload(2) = v2
-   particle(ipart)%self%payload(3) = v3
-   particle(ipart)%self%payload(4) = b1
-   particle(ipart)%self%payload(5) = b2
-   particle(ipart)%self%payload(6) = b3
-   particle(ipart)%self%payload(7) = rho
-   particle(ipart)%self%payload(8) = p
-   particle(ipart)%self%payload(9) = tr 
-   particle(ipart)%self%payload(10) = cur
-   particle(ipart)%self%payload(11) = tp
-   ! **************************************************
-   ! Time update
-   ! **************************************************
-   particle(ipart)%self%t = particle(ipart)%self%t + dt_p
-
-
-end do
-
-!=============================================================================
-end subroutine integrate_particles_spacecraft
-!=============================================================================
-subroutine set_particles_dt_spacecraft()
-!> get_dt for the spacecrafts, not useful as such (until spacecrafts moves) 
-!> but check that the rate of writing output is respected
-use mod_particles
-include 'amrvacdef.f'
-
-integer                         :: ipart, iipart, nout
-double precision                :: t_min_mype, tout, dt_particles_mype, dt_cfl
-double precision                :: v(1:ndir)
-!-----------------------------------------------------------------------------
-dt_particles      = bigdouble
-dt_particles_mype = bigdouble
-t_min_mype        = bigdouble
-
-
-do iipart=1,nparticles_active_on_mype;ipart=particles_active_on_mype(iipart);
-
-! make sure we step only one cell at a time:
-{v(^C)   = abs(particle(ipart)%self%u(^C))\}
-
-{^IFPHI 
-! convert to angular velocity:
-if (typeaxial =='cylindrical') v(phi_) = abs(v(phi_)/particle(ipart)%self%x(r_))
-}
-
-{#IFNDEF D1
-   dt_cfl = min({rnode(rpdx^D_,particle(ipart)%igrid)/v(^D)})
-}
-{#IFDEF D1
-   dt_cfl = rnode(rpdx1_,particle(ipart)%igrid)/v(1)
-}
-
-{^IFPHI
-if (typeaxial =='cylindrical') then 
-! phi-momentum leads to radial velocity:
-if (phi_ .gt. ndim) dt_cfl = min(dt_cfl, &
-     sqrt(rnode(rpdx1_,particle(ipart)%igrid)/particle(ipart)%self%x(r_)) &
-     / v(phi_))
-! limit the delta phi of the orbit (just for aesthetic reasons):
-   dt_cfl = min(dt_cfl,0.1d0/v(phi_))
-! take some care at the axis:
-   dt_cfl = min(dt_cfl,(particle(ipart)%self%x(r_)+smalldouble)/v(r_))
-end if
-}
-
-   particle(ipart)%self%dt = dt_cfl*UNIT_LENGTH
-
-
-!**************************************************
-! Make sure we dont miss an output or tmax_particles:
-!**************************************************
-   ! corresponding output slot:
-   nout = int(particle(ipart)%self%t/dtsave_ensemble) + 1
-   tout = dble(nout) * dtsave_ensemble
-   if (particle(ipart)%self%t+particle(ipart)%self%dt .gt. tout) &
-        particle(ipart)%self%dt = max(tout - particle(ipart)%self%t , smalldouble * tout)
-
-   ! bring to tmax_particles:
-   if (particle(ipart)%self%t+particle(ipart)%self%dt .gt. tmax_particles) &
-        particle(ipart)%self%dt = max(tmax_particles - particle(ipart)%self%t , smalldouble * tmax_particles)
-!**************************************************
-!**************************************************
-
-
-   dt_particles_mype = min(particle(ipart)%self%dt,dt_particles_mype)
-
-   t_min_mype = min(t_min_mype,particle(ipart)%self%t)
-
-end do !ipart
-
-! keep track of the global minimum:
-call MPI_ALLREDUCE(dt_particles_mype,dt_particles,1,MPI_DOUBLE_PRECISION,MPI_MIN,&
-     icomm,ierrmpi)
-
-! keep track of the minimum particle time:
-call MPI_ALLREDUCE(t_min_mype,t_particles,1,MPI_DOUBLE_PRECISION,MPI_MIN,&
-     icomm,ierrmpi)
-
-end subroutine set_particles_dt_spacecraft
-}
-!=============================================================================
 {#IFDEF PARTICLES_LORENTZ
 subroutine integrate_particles_lorentz()
-! this is the relativistic Boris scheme, a leapfrog integrator
+!> this is the relativistic Vay scheme, a leapfrog integrator
 use constants
 use mod_particles
 include 'amrvacdef.f'
 integer                             :: ipart, iipart
 double precision                    :: lfac, q, m, dt_p, cosphi, sinphi, phi1, phi2, r, re
 double precision, dimension(1:ndir) :: b, e, emom, uminus, t_geom, s, udash, tmp, uplus, xcart1, xcart2, ucart2, radmom
+double precision, dimension(1:ndir) :: uhalf, tau, uprime, ustar, tovergamma
+double precision                    :: lfacprime, sscal, sigma
 !-----------------------------------------------------------------------------
 
 do iipart=1,nparticles_active_on_mype;ipart=particles_active_on_mype(iipart);
@@ -797,20 +852,54 @@ do iipart=1,nparticles_active_on_mype;ipart=particles_active_on_mype(iipart);
    q  = particle(ipart)%self%q
    m  = particle(ipart)%self%m
    dt_p = particle(ipart)%self%dt
+
+      ! Push particle over half time step
+      call get_lfac(particle(ipart)%self%u,lfac)
+      particle(ipart)%self%x(1:ndir) = particle(ipart)%self%x(1:ndir) &
+           + 0.5d0 * dt_p * particle(ipart)%self%u(1:ndir)/lfac &
+           * CONST_C / UNIT_LENGTH
+
+      ! Get E, B at new position
    call get_b(particle(ipart)%igrid,particle(ipart)%self%x,particle(ipart)%self%t,b)
    call get_e(particle(ipart)%igrid,particle(ipart)%self%x,particle(ipart)%self%t,e)
 
 
 select case (typeaxial)
 ! **************************************************
-! CARTESIAN COORDINATES
+!> CARTESIAN COORDINATES
 ! **************************************************
 case ('slab')
       
 ! **************************************************
-! Momentum update
+!> Momentum update
 ! **************************************************
-      emom = q * e * dt_p /(2.0d0 * m * CONST_C)
+
+
+{#IFDEF PARTICLES_VAY
+!The Vay mover
+        call cross(particle(ipart)%self%u,b,tmp)
+        uhalf = particle(ipart)%self%u + &
+             q * dt_p /(2.0d0 * m * CONST_C) * (e &
+             + tmp/(lfac))
+       
+	tau = q * dt_p / (2.d0 * m * CONST_C) * b
+        uprime = uhalf + q * dt_p / (2.d0 * m * CONST_C) * e
+        call get_lfac(uprime,lfacprime)
+        sigma = lfacprime**2 - ({tau(^C)*tau(^C)|+})
+       
+	ustar = ({uprime(^C)*tau(^C)|+}) / CONST_C     
+        lfac = sqrt( sigma + sqrt(sigma**2 + 4.d0 * &
+             (({tau(^C)*tau(^C)|+}) + ({ustar(^C)*ustar(^C)|+}))) / 2.d0)
+
+        tovergamma = tau / lfac
+        sscal = 1.d0 / (1.d0 + ({tovergamma(^C)*tovergamma(^C)|+}))
+        call cross(uprime,tovergamma,tmp)
+        particle(ipart)%self%u = sscal * (uprime + ({uprime(^C)*tovergamma(^C)|+}) & 
+	* tovergamma + tmp)      
+}
+!The Boris mover
+{#IFNDEF PARTICLES_VAY
+emom = q * e * dt_p /(2.0d0 * m * CONST_C)
 
       if (losses) then
          call get_lfac(particle(ipart)%self%u,lfac)
@@ -848,36 +937,17 @@ case ('slab')
 
       
       particle(ipart)%self%u = uplus + emom + radmom
+}
+
 
 ! **************************************************
-! Position update
-! **************************************************
-      
-      ! update position
-      particle(ipart)%self%x(1:ndir) = particle(ipart)%self%x(1:ndir) &
-           + dt_p * particle(ipart)%self%u(1:ndir)/lfac &
-           * CONST_C / UNIT_LENGTH
-
-! **************************************************
-! Payload update
-! **************************************************
-
-      ! current gyroradius
-      call cross(particle(ipart)%self%u,b,tmp)
-      tmp = tmp / sqrt({b(^C)**2|+})
-      particle(ipart)%self%payload(1) = sqrt({tmp(^C)**2|+}) / sqrt({b(^C)**2|+}) * m / abs(q) * 8.9875d+20
-
-      ! e.b (set npayload=2 first):
-!      particle(ipart)%self%payload(2) = ({e(^C)*b(^C)|+})/ (sqrt({b(^C)**2|+})* sqrt({e(^C)**2|+}))
-
-! **************************************************
-! CYLINDRICAL COORDINATES
+!> CYLINDRICAL COORDINATES
 ! **************************************************
 case ('cylindrical')
-      
+print*,'This is Boris scheme in cylindrical coordinates'
 
 ! **************************************************
-! Momentum update
+!> Momentum update
 ! **************************************************
       emom = q * e * dt_p /(2.0d0 * m * CONST_C)
 
@@ -919,10 +989,10 @@ case ('cylindrical')
       particle(ipart)%self%u = uplus + emom + radmom
 
 ! **************************************************
-! Position update
+!> Position update
 ! **************************************************
       
-      ! Get cartesian coordinates:
+      !> Get cartesian coordinates:
       phi1        = particle(ipart)%self%x(pphi_)
       cosphi     = cos(phi1)
       sinphi     = sin(phi1)
@@ -935,13 +1005,13 @@ case ('cylindrical')
       ucart2(2)   = cosphi * particle(ipart)%self%u(pphi_) + sinphi * particle(ipart)%self%u(r_)
       ucart2(3)   = particle(ipart)%self%u(zz_)
 
-      ! update position
+      !> update position
       xcart2(1:ndir) = xcart1(1:ndir) &
            + dt_p * ucart2(1:ndir)/lfac &
            * CONST_C/UNIT_LENGTH
 
 
-      ! back to cylindrical coordinates
+      !> back to cylindrical coordinates
       phi2     = atan2(xcart2(2),xcart2(1))
       if (phi2 .lt. 0.0d0) phi2 = 2.0d0*dpi + phi2
       r       = sqrt(xcart2(1)**2 + xcart2(2)**2)
@@ -950,10 +1020,10 @@ case ('cylindrical')
       particle(ipart)%self%x(zz_)   = xcart2(3)
 
 ! **************************************************
-! Rotate the momentum to the new cooridnates
+!> Rotate the momentum to the new cooridnates
 ! **************************************************
 
-      ! rotate velocities
+      !> rotate velocities
       cosphi     = cos(phi2-phi1)
       sinphi     = sin(phi2-phi1)
 
@@ -962,32 +1032,47 @@ case ('cylindrical')
       particle(ipart)%self%u(pphi_) = cosphi * tmp(pphi_) - sinphi * tmp(r_)
       particle(ipart)%self%u(zz_)   = tmp(zz_)
 
-
-! **************************************************
-! Payload update
-! **************************************************
-
-      ! current gyroradius
-      call cross(particle(ipart)%self%u,b,tmp)
-      tmp = tmp / sqrt({b(^C)**2|+})
-      particle(ipart)%self%payload(1) = sqrt({tmp(^C)**2|+}) / sqrt({b(^C)**2|+}) * m / abs(q) * 8.9875d+20
-
 end select
 
    
 
+
+
 ! **************************************************
-! Time update
+!> Position update over half timestep at the end
+! **************************************************
+      
+      ! update position
+      particle(ipart)%self%x(1:ndir) = particle(ipart)%self%x(1:ndir) &
+           + 0.5d0 * dt_p * particle(ipart)%self%u(1:ndir)/lfac &
+           * CONST_C / UNIT_LENGTH
+
+! **************************************************
+!> Time update
 ! **************************************************
    particle(ipart)%self%t = particle(ipart)%self%t + dt_p
 
+! **************************************************
+!> Payload update
+! **************************************************
+      if (npayload > 0) then
+      !> current gyroradius
+      call cross(particle(ipart)%self%u,b,tmp)
+      tmp = tmp / sqrt({b(^C)**2|+})
+      particle(ipart)%self%payload(1) = sqrt({tmp(^C)**2|+}) / sqrt({b(^C)**2|+}) * m / abs(q) * 8.9875d+20
+      end if
+      ! e.b payload
+      if (npayload>1) then
+      !> e.b (set npayload=2 first):
+      particle(ipart)%self%payload(2) = ({e(^C)*b(^C)|+})/ (sqrt({b(^C)**2|+})* sqrt({e(^C)**2|+}))
+      end if
 
-end do ! ipart
+end do !< ipart loop
 
 !=============================================================================
 contains
 !=============================================================================
-! internal procedures
+!> internal procedures
 !=============================================================================
 subroutine get_t(b,lfac,dt,q,m,t)
 
@@ -1039,13 +1124,13 @@ do iipart=1,nparticles_active_on_mype;ipart=particles_active_on_mype(iipart);
 
 
 !**************************************************
-! CFL timestep
+!> CFL timestep
 !**************************************************
-! make sure we step only one cell at a time:
+!> make sure we step only one cell at a time:
 {v(^C)   = abs(CONST_C * particle(ipart)%self%u(^C) / lfac)\}
 
 {^IFPHI 
-! convert to angular velocity:
+!> convert to angular velocity:
 if (typeaxial =='cylindrical') v(phi_) = abs(v(phi_)/particle(ipart)%self%x(r_))
 }
 
@@ -1058,13 +1143,13 @@ if (typeaxial =='cylindrical') v(phi_) = abs(v(phi_)/particle(ipart)%self%x(r_))
 
 {^IFPHI
 if (typeaxial =='cylindrical') then 
-! phi-momentum leads to radial velocity:
+!> phi-momentum leads to radial velocity:
 if (phi_ .gt. ndim) dt_cfl = min(dt_cfl, &
      sqrt(rnode(rpdx1_,particle(ipart)%igrid)/particle(ipart)%self%x(r_)) &
      / v(phi_))
-! limit the delta phi of the orbit (just for aesthetic reasons):
+!> limit the delta phi of the orbit (just for aesthetic reasons):
    dt_cfl = min(dt_cfl,0.1d0/v(phi_))
-! take some care at the axis:
+!> take some care at the axis:
    dt_cfl = min(dt_cfl,(particle(ipart)%self%x(r_)+smalldouble)/v(r_))
 end if
 }
@@ -1073,7 +1158,7 @@ dt_cfl = dt_cfl * cfl
 !**************************************************
 !**************************************************
 
-! bound by gyro-rotation:
+!> bound by gyro-rotation:
 particle(ipart)%self%dt = &
      abs( dtheta * CONST_c/UNIT_LENGTH * particle(ipart)%self%m * lfac &
      / (particle(ipart)%self%q * absb) )
@@ -1082,15 +1167,15 @@ particle(ipart)%self%dt = min(particle(ipart)%self%dt,dt_cfl)*UNIT_LENGTH
 
 
 !**************************************************
-! Make sure we dont miss an output or tmax_particles:
+!> Make sure we don't miss an output or tmax_particles:
 !**************************************************
-   ! corresponding output slot:
+   !> corresponding output slot:
    nout = int(particle(ipart)%self%t/dtsave_ensemble) + 1
    tout = dble(nout) * dtsave_ensemble
    if (particle(ipart)%self%t+particle(ipart)%self%dt .gt. tout) &
         particle(ipart)%self%dt = max(tout - particle(ipart)%self%t , smalldouble * tout)
 
-   ! bring to tmax_particles:
+   !> bring to tmax_particles:
    if (particle(ipart)%self%t+particle(ipart)%self%dt .gt. tmax_particles) &
         particle(ipart)%self%dt = max(tmax_particles - particle(ipart)%self%t , smalldouble * tmax_particles)
 !**************************************************
@@ -1100,13 +1185,13 @@ particle(ipart)%self%dt = min(particle(ipart)%self%dt,dt_cfl)*UNIT_LENGTH
 
    t_min_mype = min(t_min_mype,particle(ipart)%self%t)
 
-end do !ipart
+end do !< ipart loop
 
-! keep track of the global minimum:
+!> keep track of the global minimum:
 call MPI_ALLREDUCE(dt_particles_mype,dt_particles,1,MPI_DOUBLE_PRECISION,MPI_MIN,&
      icomm,ierrmpi)
 
-! keep track of the minimum particle time:
+!> keep track of the minimum particle time:
 call MPI_ALLREDUCE(t_min_mype,t_particles,1,MPI_DOUBLE_PRECISION,MPI_MIN,&
      icomm,ierrmpi)
 
@@ -1114,14 +1199,14 @@ end subroutine set_particles_dt_lorentz
 !=============================================================================
 subroutine get_e(igrid,x,tloc,e)
 
-! Get the electric field in the grid at postion x.
-! For ideal SRMHD, we first interpolate b and u=lfac*v/c
-! The electric field then follows from e = b x beta, where beta=u/lfac.  
-! This ensures for the resulting e that e<b and e.b=0. Interpolating on u 
-! avoids interpolation-errors leading to v>c.  
-!
-! For (non-ideal) MHD, we directly interpolate the electric field as 
-! there is no such constraint.
+!> Get the electric field in the grid at postion x.
+!> For ideal SRMHD, we first interpolate b and u=lfac*v/c
+!> The electric field then follows from e = b x beta, where beta=u/lfac.  
+!> This ensures for the resulting e that e<b and e.b=0. Interpolating on u 
+!> avoids interpolation-errors leading to v>c.  
+!>
+!> For (non-ideal) MHD, we directly interpolate the electric field as 
+!> there is no such constraint.
 
 use mod_particles
 use mod_gridvars
@@ -1147,7 +1232,7 @@ double precision                                   :: td
 
 call get_b(igrid,x,tloc,b)
 
-! get flow four-velocity u:
+!> get flow four-velocity u:
 if (.not.time_advance) then
 
 {^C&call interpolate_var(igrid,ixG^LL,ixM^LL,gridvars(igrid)%w(ixG^T,up^C_),px(igrid)%x(ixG^T,1:ndim),x,u(^C))\}
@@ -1167,7 +1252,7 @@ call get_lfac(u,lfac)
 
 {^C&beta(^C) = u(^C)/lfac\}
 
-! do the cross-product e = b x beta:
+!> do the cross-product e = b x beta:
 
 call cross(b,beta,e)
 return
@@ -1222,7 +1307,7 @@ td = (tloc/(UNIT_LENGTH/UNIT_VELOCITY) - t) / dt
 end if
 
 
-! flat interpolation:
+!> flat interpolation:
 !{ic^D = int((x(^D)-rnode(rpxmin^D_,igrid))/rnode(rpdx^D_,igrid)) + 1 + dixB \}
 !b(1:^NC) = gridvars(igrid)%w(ic^D,bp1_:bp^NC_)
 
@@ -1248,7 +1333,7 @@ double precision, dimension(^NC), intent(in)   :: a,b
 double precision, dimension(^NC), intent(out)  :: c
 !-----------------------------------------------------------------------------
 
-! ndir needs to be three for this to work!!!
+!> ndir needs to be three for this to work!!!
 {#IFDEF C3
 select case (typeaxial)
 case ('slab')

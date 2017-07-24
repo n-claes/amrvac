@@ -17,7 +17,7 @@
   typeparIO               = 0
   nwauxio                 = 6
   filenameout             = 'output/data'
-  !filenameini             = 'output/data'
+  filenameini             = 'output/data'
   filenamelog             = 'output/data'
   !sliceascii              = T
 /
@@ -65,7 +65,7 @@
 
 
 &amrlist
-        mxnest            = 1 !5
+        mxnest            = 1
         errorestimate     = 3
         flags(10)         = 3
         flags(1)          = 1

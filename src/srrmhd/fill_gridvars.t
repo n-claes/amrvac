@@ -42,40 +42,9 @@ do iigrid=1,igridstail; igrid=igrids(iigrid);
    mygridvars(igrid)%w(ixG^T,bp1_:bp^NC_) = w(ixG^T,b1_:b^NC_) &
         * sqrt(4.0d0*dpi*UNIT_VELOCITY**2.0d0 * UNIT_DENSITY)
 
-
-! get the four-velocity (we get the electric field later from e = b x beta):
-   mygridvars(igrid)%w(ixG^T,up1_:up^NC_) = w(ixG^T,u1_:u^NC_)
-   if (.not.useprimitiveRel) then
-      do idir=1,ndir
-         mygridvars(igrid)%w(ixG^T,up1_+idir-1) = mygridvars(igrid)%w(ixG^T,up1_+idir-1) * w(ixG^T,lfac_) 
-      end do
-   end if
-   
-
-!   select case (typeaxial)
-!   case ('slab')
-!      mygridvars(igrid)%w(ixG^T,ep1_) = mygridvars(igrid)%w(ixG^T,2) * beta(ixG^T,3) &
-!           - mygridvars(igrid)%w(ixG^T,3) * beta(ixG^T,2)
-!      
-!      mygridvars(igrid)%w(ixG^T,ep2_) = mygridvars(igrid)%w(ixG^T,3) * beta(ixG^T,1) &
-!           - mygridvars(igrid)%w(ixG^T,1) * beta(ixG^T,3)
-!      
-!      mygridvars(igrid)%w(ixG^T,ep3_) = mygridvars(igrid)%w(ixG^T,1) * beta(ixG^T,2) &
-!           - mygridvars(igrid)%w(ixG^T,2) * beta(ixG^T,1)
-!{^IFPHI
-!   case ('cylindrical')
-!      mygridvars(igrid)%w(ixG^T,ep1_) = mygridvars(igrid)%w(ixG^T,^PHI) * beta(ixG^T,^Z) &
-!           - mygridvars(igrid)%w(ixG^T,^Z) * beta(ixG^T,^PHI)
-!      
-!      mygridvars(igrid)%w(ixG^T,ep^PHI_) = mygridvars(igrid)%w(ixG^T,^Z) * beta(ixG^T,1) &
-!           - mygridvars(igrid)%w(ixG^T,1) * beta(ixG^T,^Z)
-!      
-!      mygridvars(igrid)%w(ixG^T,ep^Z_) = mygridvars(igrid)%w(ixG^T,1) * beta(ixG^T,^PHI) &
-!           - mygridvars(igrid)%w(ixG^T,^PHI) * beta(ixG^T,1)
-!}
-!   case default
-!      call mpistop('geometry not implemented in fill_gridvars, or phi not properly set')
-!   end select
+! fill with electric field:
+   mygridvars(igrid)%w(ixG^T,ep1_:ep^NC_) = w(ixG^T,e1_:e^NC_) &
+        * sqrt(4.0d0*dpi*UNIT_VELOCITY**2.0d0 * UNIT_DENSITY)
 
 }
 

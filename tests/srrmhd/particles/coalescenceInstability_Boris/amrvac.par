@@ -20,8 +20,6 @@
   filenameini             = 'output/data'
   filenamelog             = 'output/data'
   !sliceascii              = T
-  snapshotini		  = 25
-  snapshotnext		  = 26
 /
 
 

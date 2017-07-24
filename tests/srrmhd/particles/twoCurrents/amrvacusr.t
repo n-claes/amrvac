@@ -16,7 +16,7 @@ include 'amrvacdef.f'
 !-----------------------------------------------------------------------------
 
 eqpar(gamma_) = 4.0d0/3.0d0
-eqpar(eta_)   = 0.1d0 !0.01d0
+eqpar(eta_)   = 0.01d0
 eqpar(kappa_) = one/0.18d0
 
 eqpar(beta0_) = 0.01d0
