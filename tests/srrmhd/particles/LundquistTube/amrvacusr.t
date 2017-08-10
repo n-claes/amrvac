@@ -7,21 +7,22 @@ INCLUDE:amrvacnul/specialsource.t
 INCLUDE:amrvacnul/specialimpl.t
 INCLUDE:amrvacnul/usrflags.t
 INCLUDE:amrvacnul/correctaux_usr.t
-INCLUDE:amrvacmodules/handle_particles.t
-INCLUDE:../tests/srrmhd/particles/twoCurrents/integrate_particles.t
+!INCLUDE:amrvacmodules/handle_particles.t
+!INCLUDE:../tests/srrmhd/particles/LundquistTube/integrate_particles.t
 !=============================================================================
 subroutine initglobaldata_usr
 
+use constants
 include 'amrvacdef.f'
 
-double precision :: scaleb
+double precision scaleb
 !-----------------------------------------------------------------------------
 
 eqpar(gamma_) = 4.0d0/3.0d0
-eqpar(eta_)   = 0.01d0
+eqpar(eta_)   = 0.001d0
 eqpar(kappa_) = one/0.18d0
 
-eqpar(beta0_) = 0.01d0
+eqpar(beta0_) = 0.01d0 !0.01d0
 eqpar(rho0_)  = 0.01d0
 eqpar(vcoll_) = 0.1d0
 
@@ -62,14 +63,15 @@ patchw(ix^S) = .false.
 !-----------------------------------------------------------------------------
 ! Do some geometry:
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-r1(ix^S) = sqrt((x(ix^S,1)+one)**2+x(ix^S,2)**2)
-r2(ix^S) = sqrt((x(ix^S,1)-one)**2+x(ix^S,2)**2)
+!Change these two one channel only, centered
+r1(ix^S) = sqrt((x(ix^S,1))**2+x(ix^S,2)**2)
+!r2(ix^S) = sqrt((x(ix^S,1)-one)**2+x(ix^S,2)**2)
 
 sinphi1(ix^S) = x(ix^S,2)/r1(ix^S)
 cosphi1(ix^S) = (x(ix^S,1)+one)/r1(ix^S)
 
-sinphi2(ix^S) = x(ix^S,2)/r2(ix^S)
-cosphi2(ix^S) = (x(ix^S,1)-one)/r2(ix^S)
+!sinphi2(ix^S) = x(ix^S,2)/r2(ix^S)
+!cosphi2(ix^S) = (x(ix^S,1)-one)/r2(ix^S)
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 ! Calculate pt0 from central plasma beta:
@@ -86,19 +88,20 @@ w(ix^S,q_)    = 0.0d0
 ! Toroidal magnetic field:
 {^D& do ix^D=ixmin^D,ixmax^D\}
     bphi1(ix^D) = ct*alphat*bessel_j1(alphat*r1(ix^D))
-    bphi2(ix^D) = ct*alphat*bessel_j1(alphat*r2(ix^D))
+  !  bphi2(ix^D) = ct*alphat*bessel_j1(alphat*r2(ix^D))
 {^D& end do\}
 
+!Make sure we don’t have a flip in Bz by adding a constant C as in the coalescence instability
 ! Poloidal (z) magnetic field:
 {^D& do ix^D=ixmin^D,ixmax^D\}
     bz1(ix^D) = alphat * ( ct*bessel_j0(alphat*r1(ix^D)) - Ft/alphat**2 )
-    bz2(ix^D) = alphat * ( ct*bessel_j0(alphat*r2(ix^D)) - Ft/alphat**2 )
+  !  bz2(ix^D) = alphat * ( ct*bessel_j0(alphat*r2(ix^D)) - Ft/alphat**2 )
 {^D& end do\}
 
 ! Thermal pressure:
 {^D& do ix^D=ixmin^D,ixmax^D\}
     p1(ix^D) = Ft * (ct * bessel_j0(alphat*r1(ix^D))-Ft/alphat**2) + pt0
-    p2(ix^D) = Ft * (ct * bessel_j0(alphat*r2(ix^D))-Ft/alphat**2) + pt0
+  !  p2(ix^D) = Ft * (ct * bessel_j0(alphat*r2(ix^D))-Ft/alphat**2) + pt0
 {^D& end do\}
 
 ! Fill and reset outside of r=1:
@@ -107,13 +110,13 @@ where(r1(ix^S) .lt. one)
    w(ix^S,b1_) = - sinphi1(ix^S) * bphi1(ix^S)
    w(ix^S,b2_) = + cosphi1(ix^S) * bphi1(ix^S)
    w(ix^S,b3_) = bz1(ix^S)
-   w(ix^S,u1_) = + eqpar(vcoll_)
-elsewhere(r2(ix^S) .lt. one)
-   w(ix^S,pp_) = p2(ix^S)
-   w(ix^S,b1_) = - sinphi2(ix^S) * bphi2(ix^S)
-   w(ix^S,b2_) = + cosphi2(ix^S) * bphi2(ix^S)
-   w(ix^S,b3_) = bz2(ix^S)
-   w(ix^S,u1_) = - eqpar(vcoll_)
+  ! w(ix^S,u1_) = + eqpar(vcoll_)
+!elsewhere(r2(ix^S) .lt. one)
+!   w(ix^S,pp_) = p2(ix^S)
+!   w(ix^S,b1_) = - sinphi2(ix^S) * bphi2(ix^S)
+!   w(ix^S,b2_) = + cosphi2(ix^S) * bphi2(ix^S)
+!   w(ix^S,b3_) = bz2(ix^S)
+!   w(ix^S,u1_) = - eqpar(vcoll_)
 elsewhere
    w(ix^S,pp_) = pt0
    w(ix^S,b1_) = zero
