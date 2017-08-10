@@ -887,7 +887,7 @@ case ('slab')
         call get_lfac(uprime,lfacprime)
         sigma = lfacprime**2 - ({tau(^C)*tau(^C)|+})
        
-	ustar = ({uprime(^C)*tau(^C)|+}) / CONST_C     
+	ustar = ({uprime(^C)*tau(^C)|+})    
         lfac = sqrt((sigma + sqrt(sigma**2 + 4.d0 * &
              (({tau(^C)*tau(^C)|+}) + ({ustar(^C)*ustar(^C)|+})))) / 2.d0)
 
