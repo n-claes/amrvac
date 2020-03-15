@@ -1,4 +1,5 @@
 VACPP := $(AMRVAC_DIR)/src/vacpp.pl
+VACPP_PYFIX := $(AMRVAC_DIR)/src/vacpp_hotfix.py
 
 # Disable built-in make rules
 .SUFFIXES:
@@ -21,9 +22,8 @@ m_%.mod: m_%.f m_%.o
 # How to translate .t source files to normal Fortran
 %.f: %.t
 	$(VACPP) $(PPFLAGS) -d=$(NDIM) $< > $(@)
+	python $(VACPP_PYFIX) -f $(@)
 
 # How to generate executables
 %: %.o
 	$(LINK) $(F90FLAGS) $^ -o $@ $(addprefix -L,$(LIB_DIRS)) $(addprefix -l,$(LIBS))
-
-
