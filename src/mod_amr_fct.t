@@ -1,7 +1,7 @@
 module mod_amr_fct
   implicit none
   save
-  
+
   type facealloc
     double precision, dimension(:^D&), pointer :: face
   end type facealloc
@@ -51,8 +51,8 @@ contains
     double precision :: slopes(sCo%ixGs^S,ndim)
     {^IFTHREED
     ! Directional bias, see pdf
-    ! These arrays should have ranges ixO^S
-    ! Since they are still not known, we give ranges ixG^T,
+    ! These arrays should have ranges ixO ^ S
+    ! Since they are still not known, we give ranges ixG ^ T,
     ! even though it is wasteful
     double precision :: sigmau(ixG^T),sigmad(ixG^T),sigma(ixG^T,1:ndim), alpha(ixG^T,1:ndim)
     ! Auxiliary arrays for magnetic fluxes
@@ -65,7 +65,7 @@ contains
 
     {^NOONED
     ! Note on the indices:
-    ! ixCo  Cells where 
+    ! ixCo  Cells where
     !       divergence-preserving prolongation will be applied.
     ! ixFi  Fine cells which correspond to that extent.
     ! ixCoE For 'expanded', faces that need to be used to calculate
@@ -117,8 +117,8 @@ contains
 
     ! Initialize auxiliary arrays at zero
     bfluxCo = zero
-    bfluxFi = zero 
-    slopes  = zero 
+    bfluxFi = zero
+    slopes  = zero
 
 
     invdxCo^D=1.d0/dxCo^D;
@@ -148,7 +148,7 @@ contains
       ! Add fine fluxes sharing the same fine face
      {do ix^DE=0,1\}
         ixFisC^L=ixFisE^L+ix2*kr(idim2,^D);
-        {^IFTHREED 
+        {^IFTHREED
         ixFisC^L=ixFisC^L+ix3*kr(idim3,^D);
         }
         bfluxCo(ixCosE^S,idim1)=bfluxCo(ixCosE^S,idim1)+bfluxFi(ixFisCmin^D:ixFisCmax^D:2,idim1)
@@ -436,7 +436,7 @@ contains
   !> when refining a block we take into account the faces of the
   !> already fine neighbours, if any. This routine stores them.
   subroutine store_faces
-    use mod_forest, only: refine 
+    use mod_forest, only: refine
     use mod_global_parameters
     integer :: igrid, iigrid, idims, iside, ineighbor, ipe_neighbor
     integer :: nx^D, i^D, ic^D, inc^D
@@ -451,7 +451,7 @@ contains
 
     do iigrid=1,igridstail; igrid=igrids(iigrid);
       ! Check whether it is necessary to store any block face, i.e.
-      ! if any coarser neighbour is going to be refined 
+      ! if any coarser neighbour is going to be refined
      {do iside=1,2
         i^DD=kr(^DD,^D)*(2*iside-3);
         if (neighbor_pole(i^DD,igrid)/=0) cycle
@@ -583,7 +583,7 @@ contains
       ibuf_send=1
       do iigrid=1,igridstail; igrid=igrids(iigrid);
         ! Check whether it is necessary to store any block face, i.e.
-        ! if any coarser neighbour is going to be refined 
+        ! if any coarser neighbour is going to be refined
        {do iside=1,2
           i^DD=kr(^DD,^D)*(2*iside-3);
           ! When there is a pole, faces are always zero and this is not necessary
@@ -667,7 +667,7 @@ contains
   end subroutine old_neighbors
 
   !> This routine fills the fine faces before prolonging.
-  !> It is the face equivalent of fix_conserve 
+  !> It is the face equivalent of fix_conserve
   subroutine already_fine(sFi,ichild,fine_^L)
     use mod_forest
     use mod_global_parameters
@@ -696,7 +696,7 @@ contains
       if (neighbor_pole(i^DD,ichild)/=0) cycle
 
       ! Get old ipe and igrid of neighbour from array fake_neighbor
-      ! Then plug it into the structure pfaces and get the faces 
+      ! Then plug it into the structure pfaces and get the faces
       ineighbor   =old_neighbor(1,i^DD,ichild)
       ipe_neighbor=old_neighbor(2,i^DD,ichild)
 

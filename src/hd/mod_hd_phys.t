@@ -27,7 +27,7 @@ module mod_hd_phys
 
   !> Whether rotating frame is activated
   logical, public, protected              :: hd_rotating_frame = .false.
-  
+
   !> Number of tracer species
   integer, public, protected              :: hd_n_tracer = 0
 
@@ -144,9 +144,9 @@ contains
         endif
       enddo
      case (spherical)
-      if (hd_dust) &
-        call mpistop("Error: hd_angmomfix is not implemented &\\
-        &with dust and coordinate=='sperical'")
+      if (hd_dust) then
+        call mpistop("Error: hd_angmomfix is not implemented with dust and coordinate=='sperical'")
+      end if
       do iw=1,nwflux
         if     (idim==r_ .and. (iw==iw_mom(2) .or. iw==iw_mom(phi_))) then
           fC(kxC^S,iw,idim)= fC(kxC^S,iw,idim)*(x(kxC^S,idim)+half*block%dx(kxC^S,idim))
@@ -259,7 +259,7 @@ contains
 
     ! Initialize rotating_frame module
     if (hd_rotating_frame) call rotating_frame_init()
-    
+
     ! Initialize particles module
     if (hd_particles) then
        call particles_init()
@@ -627,7 +627,7 @@ contains
 
     call hd_get_pthermal(w,x,ixI^L,ixO^L,csound2)
     csound2(ixO^S)=hd_gamma*csound2(ixO^S)/w(ixO^S,rho_)
-    
+
   end subroutine hd_get_csound2
 
   !> Calculate thermal pressure=(gamma-1)*(e-0.5*m**2/rho) within ixO^L
@@ -814,7 +814,7 @@ contains
              if(.not. angmomfix) then
                 where (wCT(ixO^S, irho) > minrho)
                    source(ixO^S) = -wCT(ixO^S, mphi_) * wCT(ixO^S, mr_) / wCT(ixO^S, irho)
-                   w(ixO^S, mphi_) = w(ixO^S, mphi_) + qdt * source(ixO^S) / x(ixO^S, r_) 
+                   w(ixO^S, mphi_) = w(ixO^S, mphi_) + qdt * source(ixO^S) / x(ixO^S, r_)
                 end where
              end if
           else
@@ -933,7 +933,7 @@ contains
          end if
       end if
     end if
-    
+
   end subroutine hd_add_source
 
   subroutine hd_get_dt(w, ixI^L, ixO^L, dtnew, dx^D, x)
