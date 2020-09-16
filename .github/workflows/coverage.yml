@@ -1,0 +1,33 @@
+name: code-coverage
+
+on:
+  push:
+    branches: [ add_coverage ]
+
+env:
+  CC: /usr/bin/gcc-10
+  FC: /usr/bin/gfortran-10
+  AMRVAC_DIR: $GITHUB_WORKSPACE/amrvac
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+      - name: Python 3.8
+        uses: actions/setup-python@v1
+        with:
+          python-version: 3.8
+      - name: Install dependencies
+        run: |
+          sudo add-apt-repository ppa:ubuntu-toolchain-r/test
+          sudo apt update
+          sudo apt-get install gfortran-10
+          gfortran-10 --version
+          sudo apt-get install openmpi-bin libopenmpi-dev
+          mpirun --version
+          pip install gcovr
+          which gcovr
+          which gcov
+          which gcov-10
