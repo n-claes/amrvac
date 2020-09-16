@@ -31,18 +31,20 @@ jobs:
       - name: Compile amrvac
         run: |
           cd lib
-          make -j 2 ARCH=coverage
+          make -j 4 ARCH=coverage
       - name: Run tests
         run: |
           cd tests
-          make -j 2 ARCH=coverage rho
+          make -j 4 rd ARCH=coverage
       - name: Generate coverage report
         run: |
           mkdir coverage
           cd lib
+          ls -l
           gcovr -r . --print-summary --html --html-details --gcov-executable /usr/bin/gcov-10 --output ../coverage/coverage.html
       - name: Upload report
         uses: actions/upload-artifact@v1
+        if: success()
         with:
           name: coverage_report
           path: coverage/
