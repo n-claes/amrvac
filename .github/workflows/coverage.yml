@@ -35,12 +35,11 @@ jobs:
       - name: Run tests
         run: |
           cd tests
-          make -j 4 rd ARCH=coverage
+          make -j 4 ARCH=coverage
       - name: Generate coverage report
         run: |
           mkdir coverage
           cd lib
-          ls -l
           gcovr -r . --print-summary --html --html-details --output ../coverage/coverage.html
       - name: Upload report
         uses: actions/upload-artifact@v1
