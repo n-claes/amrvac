@@ -7,7 +7,7 @@ on:
 env:
   CC: /usr/bin/gcc-10
   FC: /usr/bin/gfortran-10
-  AMRVAC_DIR: $GITHUB_WORKSPACE/amrvac
+  AMRVAC_DIR: $GITHUB_WORKSPACE
 
 jobs:
   build:
@@ -28,6 +28,7 @@ jobs:
           sudo apt-get install openmpi-bin libopenmpi-dev
           mpirun --version
           pip install gcovr
-          which gcovr
-          which gcov
-          which gcov-10
+      - name: Compile amrvac
+        run: |
+          cd lib
+          make -j 2 ARCH=coverage 1d
