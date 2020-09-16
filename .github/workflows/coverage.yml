@@ -30,6 +30,20 @@ jobs:
           pip install gcovr
       - name: Compile amrvac
         run: |
-          echo $AMRVAC_DIR
           cd lib
-          make -j 2 ARCH=coverage 1d
+          make -j 2 ARCH=coverage
+      - name: Run tests
+        run: |
+          cd tests
+          make -j 2 ARCH=coverage rho
+      - name: Generate coverage report
+        run: |
+          mkdir coverage
+          cd lib
+          gcovr -r . --print-summary --html --html-details --gcov-executable /usr/bin/gcov-10 --output ../coverage/coverage.html
+      - name: Upload report
+        uses: actions/upload-artifact@v1
+        with:
+          name: coverage_report
+          path: coverage/
+          
