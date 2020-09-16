@@ -41,7 +41,7 @@ jobs:
           mkdir coverage
           cd lib
           ls -l
-          gcovr -r . --print-summary --html --html-details --gcov-executable /usr/bin/gcov-10 --output ../coverage/coverage.html
+          gcovr -r . --print-summary --html --html-details --output ../coverage/coverage.html
       - name: Upload report
         uses: actions/upload-artifact@v1
         if: success()
